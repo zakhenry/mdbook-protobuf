@@ -1,0 +1,11 @@
+[book]
+authors = ["Zak Henry"]
+language = "en"
+multilingual = false
+src = "src"
+title = "mdbook-protobuf"
+
+[preprocessor.protobuf]
+#generated in build.rs, see line `.file_descriptor_set_path("./docs/build/proto_file_descriptor.pb")`
+proto_descriptor = "./build/proto_file_descriptor_set.pb"
+generate_reference_section = true
