@@ -1,0 +1,11 @@
+
+syntax = "proto3";
+
+package helloworld;
+
+message Foo {
+  oneof which {
+    string bar = 1;
+    int32 baz = 2;
+  }
+}

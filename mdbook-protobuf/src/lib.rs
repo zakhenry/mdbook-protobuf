@@ -22,6 +22,7 @@ pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
 
 use std::fs::canonicalize;
 use anyhow::anyhow;
+use askama::filters::format;
 use log::{debug, info};
 use mdbook::book::{Book, Chapter};
 use mdbook::BookItem;
@@ -58,7 +59,7 @@ impl Preprocessor for ProtobufPreprocessor {
         info!("found {} proto files", file_descriptor_set.file.len());
 
         for file_descriptor in file_descriptor_set.file {
-            let name = format!("{}", &file_descriptor.package());
+            let name = format!("{}", &file_descriptor.name());
             let path = PathBuf::from(format!("proto/{}", &file_descriptor.name()));
 
             let content = render_protobuf_descriptor(file_descriptor)?;
@@ -85,44 +86,36 @@ use prost_types::field_descriptor_proto::Type;
 use prost_types::source_code_info::Location;
 
 #[derive(Template)]
-#[template(path = "message_link.html")]
-struct ProtoMessageLink {
+#[template(path = "symbol_link.html")]
+struct SymbolLink {
     label: String,
+    id: String,
+    path: String
 }
 
-impl ProtoMessageLink {
+impl SymbolLink {
     fn from_type_name(type_name: String) -> Self {
+
+        let label = if let Some(index) = &type_name.rfind('.') {
+            &type_name[index + 1..]
+        } else {
+            &type_name
+        }.into();
+
         Self {
-            label: type_name,
+            label,
+            id: type_name,
+            path: "".into() // @todo
         }
     }
 
     fn href(&self) -> String {
-        format!("/path/to/{}", self.label)
-    }
-}
-
-#[derive(Template)]
-#[template(path = "enum_link.html")]
-struct EnumLink {
-    label: String,
-}
-
-impl EnumLink {
-    fn from_type_name(type_name: String) -> Self {
-        Self {
-            label: type_name,
-        }
-    }
-
-    fn href(&self) -> String {
-        format!("/path/to/{}", self.label)
+        format!("{}#{}", self.path, self.id)
     }
 }
 
 enum FieldType {
-    Message(ProtoMessageLink),
-    Enum(EnumLink),
+    Symbol(SymbolLink),
     Primitive(Type),
     Unimplemented,
 }
@@ -146,8 +139,7 @@ impl Field {
                 }
                 Some(label) => {
                     match Type::try_from(label).expect("should be of type") {
-                        Type::Enum => FieldType::Enum(EnumLink::from_type_name(field_descriptor.type_name.clone().unwrap())),
-                        Type::Message => FieldType::Message(ProtoMessageLink::from_type_name(field_descriptor.type_name.clone().unwrap())),
+                        Type::Enum | Type::Message=> FieldType::Symbol(SymbolLink::from_type_name(field_descriptor.type_name.clone().unwrap())),
                         t => FieldType::Primitive(t),
                     }
                 }
@@ -164,25 +156,31 @@ struct ProtoMessage {
     nested_message: Vec<ProtoMessage>,
     nested_enum: Vec<Enum>,
     fields: Vec<Field>,
+    namespace: Vec<String>
 }
 
 impl ProtoMessage {
-    fn from_descriptor(file_descriptor: &FileDescriptorProto, message_descriptor: &DescriptorProto, path: &[i32]) -> Self {
+    fn from_descriptor(file_descriptor: &FileDescriptorProto, message_descriptor: &DescriptorProto, source_path: &[i32], namespace_path: Vec<String>) -> Self {
+
+        let mut nested_namespace = namespace_path.clone();
+        nested_namespace.push(message_descriptor.name().into());
+
         Self {
             name: message_descriptor.name().into(),
-            meta: read_source_code_info(file_descriptor, path),
+            namespace: namespace_path,
+            meta: read_source_code_info(file_descriptor, source_path),
             nested_message: message_descriptor.nested_type.iter().enumerate().map(|(idx, m)| {
-                let mut nested_path = path.to_vec();
+                let mut nested_path = source_path.to_vec();
                 nested_path.extend(&[idx as i32]);
-                ProtoMessage::from_descriptor(file_descriptor, m, nested_path.as_ref())
+                ProtoMessage::from_descriptor(file_descriptor, m, nested_path.as_ref(), nested_namespace.clone())
             }).collect(),
             nested_enum: message_descriptor.enum_type.iter().enumerate().map(|(idx, m)| {
-                let mut nested_path = path.to_vec();
+                let mut nested_path = source_path.to_vec();
                 nested_path.extend(&[idx as i32]);
                 Enum::from_descriptor(file_descriptor, m, nested_path.as_ref())
             }).collect(),
             fields: message_descriptor.field.iter().enumerate().map(|(idx, f)| {
-                let mut nested_path = path.to_vec();
+                let mut nested_path = source_path.to_vec();
                 nested_path.extend(&[SERVICE_METHOD_TAG, idx as i32]);
                 Field::from_descriptor(file_descriptor, f, nested_path.as_ref())
             }).collect(),
@@ -190,7 +188,7 @@ impl ProtoMessage {
     }
 
     fn href_id(&self) -> String {
-        self.name.clone()
+        format!(".{}.{}", self.namespace.join("."), self.name)
     }
 }
 
@@ -221,8 +219,8 @@ impl Enum {
 #[template(path = "method.html")]
 struct Method {
     name: String,
-    request_message: ProtoMessageLink,
-    response_message: ProtoMessageLink,
+    request_message: SymbolLink,
+    response_message: SymbolLink,
     meta: Option<Location>,
 }
 
@@ -259,18 +257,20 @@ fn read_source_code_info(descriptor: &FileDescriptorProto, path: &[i32]) -> Opti
 }
 
 fn render_protobuf_descriptor(descriptor: FileDescriptorProto) -> Result<String> {
+    let namespace = vec![descriptor.package().to_string()];
+
     let services = descriptor.service.iter().enumerate().map(|(service_idx, s)| Service {
         name: s.name().into(),
         methods: s.method.iter().enumerate().map(|(method_idx, m)| Method {
             name: m.name().parse().unwrap(),
-            request_message: ProtoMessageLink::from_type_name(m.input_type.clone().unwrap()),
-            response_message: ProtoMessageLink::from_type_name(m.output_type.clone().unwrap()),
+            request_message: SymbolLink::from_type_name(m.input_type.clone().unwrap()),
+            response_message: SymbolLink::from_type_name(m.output_type.clone().unwrap()),
             meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32, SERVICE_METHOD_TAG, method_idx as i32]),
         }).collect(),
         meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
     }).collect();
 
-    let messages = descriptor.message_type.iter().enumerate().map(|(message_idx, m)| ProtoMessage::from_descriptor(&descriptor, m, &[MESSAGE_TYPE_TAG, message_idx as i32])).collect();
+    let messages = descriptor.message_type.iter().enumerate().map(|(message_idx, m)| ProtoMessage::from_descriptor(&descriptor, m, &[MESSAGE_TYPE_TAG, message_idx as i32], namespace.clone())).collect();
 
     let enums = descriptor.enum_type.iter().enumerate().map(|(enum_idx, e)| Enum::from_descriptor(&descriptor, e, &[ENUM_TYPE_TAG, enum_idx as i32])).collect();
 

@@ -12,9 +12,7 @@
                 {% else %}
                    @todo rest of the primitives
             {% endmatch %}
-        {% when FieldType::Message with (link) %}
-            {{link|safe}}
-        {% when FieldType::Enum with (link) %}
+        {% when FieldType::Symbol with (link) %}
             {{link|safe}}
         {% else %}
            @todo match unimplemented type
