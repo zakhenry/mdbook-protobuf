@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package testing;
+
+import "google/protobuf/empty.proto";
+
+message Message {
+  message NestedType {
+    float nested_float = 1;
+  }
+
+  enum NestedEnum {
+    UNKNOWN = 0;
+    KNOWN = 1;
+  }
+
+  string message = 1;
+
+  oneof oneof_type {
+    double oneof_double_type = 2;
+    float oneof_float_type = 3;
+    bool oneof_bool_type = 4;
+    Enum oneof_enum_type = 5;
+    NestedType oneof_nested_type = 6;
+    google.protobuf.Empty oneof_empty = 7;
+    NestedEnum oneof_nested_enum = 8;
+  }
+}
+
+enum Enum {
+  VALUE_0 = 0;
+  VALUE_1 = 1;
+  VALUE_3 = 3;
+  VALUE_7 = 7;
+}
+
+message RepeatedTypes {
+  repeated int32 repeated_ints = 1;
+  repeated Message repeated_messages = 2;
+  repeated Enum repeated_enums = 3;
+  map<uint32, Message> message_map = 5;
+  map<string, fixed32> fixed32_map = 6;
+}
+
+message OtherMessage {
+  message NestedType {
+    float nested_float = 1;
+  }
+
+  oneof oneof_type {
+    double oneof_double_type = 1;
+    float oneof_float_type = 2;
+    int32 oneof_int32_type = 3;
+    int64 oneof_int64_type = 4;
+    uint32 oneof_uint32_type = 5;
+    uint64 oneof_uint64_type = 6;
+    sint32 oneof_sint32_type = 7;
+    sint64 oneof_sint64_type = 8;
+    fixed32 oneof_fixed32_type = 9;
+    fixed64 oneof_fixed64_type = 10;
+    sfixed32 oneof_sfixed32_type = 11;
+    sfixed64 oneof_sfixed64_type = 12;
+    bool oneof_bool_type = 13;
+    string oneof_string_type = 14;
+    bytes oneof_bytes_type = 15;
+    Enum oneof_enum_type = 16;
+    NestedType oneof_nested_type = 17;
+    google.protobuf.Empty oneof_empty = 18;
+  }
+
+  RepeatedTypes repeated_types_type = 19;
+  NestedType nested_type = 20;
+  google.protobuf.Empty empty_type = 21;
+}
+
+message TypeTest {
+  message NestedType {
+    float nested_float = 1;
+  }
+
+  double double_type = 1;
+  float float_type = 2;
+  int32 int32_type = 3;
+  int64 int64_type = 4;
+  uint32 uint32_type = 5;
+  uint64 uint64_type = 6;
+  sint32 sint32_type = 7;
+  sint64 sint64_type = 8;
+  fixed32 fixed32_type = 9;
+  fixed64 fixed64_type = 10;
+  sfixed32 sfixed32_type = 11;
+  sfixed64 sfixed64_type = 12;
+  bool bool_type = 13;
+  string string_type = 14;
+  bytes bytes_type = 15;
+
+  Enum enum_type = 16;
+
+  OtherMessage other_type = 17;
+  NestedType nested_type = 18;
+}

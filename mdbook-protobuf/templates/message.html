@@ -1,0 +1,20 @@
+<fieldset class="message" id="{{Self::href_id(self)}}">
+    <label>{{name}}</label>
+    {% if let Some(meta) = meta %}
+    {% if let Some(comment) = meta.leading_comments %}
+    <em>{{comment}}</em>
+    {% endif %}
+    {% endif %}
+
+    {% for field in fields %}
+    {{ field|safe }}
+    {% endfor %}
+
+    {% for message in nested_message %}
+    {{ message|safe }}
+    {% endfor %}
+
+    {% for enum in nested_enum %}
+    {{ enum|safe }}
+    {% endfor %}
+</fieldset>

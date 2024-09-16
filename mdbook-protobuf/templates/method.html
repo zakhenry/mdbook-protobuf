@@ -1,5 +1,10 @@
 <div class="method">
     <h2>{{name}}</h2>
-    <h2>{{request_message.name}}</h2>
-    <h2>{{response_message.name}}</h2>
+    {% if let Some(meta) = meta %}
+    {% if let Some(comment) = meta.leading_comments %}
+    <em>{{comment}}</em>
+    {% endif %}
+    {% endif %}
+    <h2>{{request_message|safe}}</h2>
+    <h2>{{response_message|safe}}</h2>
 </div>

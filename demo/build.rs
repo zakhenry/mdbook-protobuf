@@ -6,6 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile(
             &[
                 "./proto/helloworld.proto",
+                "./proto/type_test.proto",
             ],
             &["./proto"],
         )?;
