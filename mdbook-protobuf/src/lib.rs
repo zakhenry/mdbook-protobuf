@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -58,14 +59,18 @@ impl Preprocessor for ProtobufPreprocessor {
 
         info!("found {} proto files", file_descriptor_set.file.len());
 
+        let mut namespaces: BTreeMap<String, ProtoNamespaceTemplate> = BTreeMap::new();
+
         for file_descriptor in file_descriptor_set.file {
-            let name = format!("{}", &file_descriptor.name());
-            let path = PathBuf::from(format!("proto/{}", &file_descriptor.name()));
+            let value = namespaces.entry(file_descriptor.package().to_string()).or_default();
+            value.files.push(ProtoFileDescriptorTemplate::from_descriptor(file_descriptor));
+        }
 
-            let content = render_protobuf_descriptor(file_descriptor)?;
-
+        for (namespace_key, namespace) in namespaces {
+            let content = namespace.render()?;
+            let path = PathBuf::from(format!("proto/{}", &namespace_key.replace(".", "/")));
             let section = BookItem::Chapter(Chapter::new(
-                name.as_ref(),
+                namespace_key.as_ref(),
                 content,
                 path,
                 Vec::new(),
@@ -234,11 +239,42 @@ struct Service {
 
 #[derive(Template)]
 #[template(path = "proto.html")]
-struct ProtoFileTemplate {
+struct ProtoFileDescriptorTemplate {
     services: Vec<Service>,
     messages: Vec<ProtoMessage>,
     enums: Vec<Enum>,
+    filename: String
 }
+
+impl ProtoFileDescriptorTemplate {
+    fn from_descriptor(descriptor: FileDescriptorProto) -> Self {
+        let namespace = vec![descriptor.package().to_string()];
+
+        let services = descriptor.service.iter().enumerate().map(|(service_idx, s)| Service {
+            name: s.name().into(),
+            methods: s.method.iter().enumerate().map(|(method_idx, m)| Method {
+                name: m.name().parse().unwrap(),
+                request_message: SymbolLink::from_type_name(m.input_type.clone().unwrap()),
+                response_message: SymbolLink::from_type_name(m.output_type.clone().unwrap()),
+                meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32, SERVICE_METHOD_TAG, method_idx as i32]),
+            }).collect(),
+            meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
+        }).collect();
+
+        let messages = descriptor.message_type.iter().enumerate().map(|(message_idx, m)| ProtoMessage::from_descriptor(&descriptor, m, &[MESSAGE_TYPE_TAG, message_idx as i32], namespace.clone())).collect();
+
+        let enums = descriptor.enum_type.iter().enumerate().map(|(enum_idx, e)| Enum::from_descriptor(&descriptor, e, &[ENUM_TYPE_TAG, enum_idx as i32])).collect();
+
+        Self { services, messages, enums, filename: descriptor.name().into() }
+    }
+}
+
+#[derive(Template, Default)]
+#[template(path = "namespace.html")]
+struct ProtoNamespaceTemplate {
+    files: Vec<ProtoFileDescriptorTemplate>
+}
+
 
 // these tags come from FileDescriptorProto - prost doesn't provide a way to read this as-yet
 // see https://github.com/tokio-rs/prost/issues/137 const SERVICE_METHOD_TAG: i32 = 2;
@@ -254,29 +290,6 @@ fn read_source_code_info(descriptor: &FileDescriptorProto, path: &[i32]) -> Opti
     } else {
         None
     }
-}
-
-fn render_protobuf_descriptor(descriptor: FileDescriptorProto) -> Result<String> {
-    let namespace = vec![descriptor.package().to_string()];
-
-    let services = descriptor.service.iter().enumerate().map(|(service_idx, s)| Service {
-        name: s.name().into(),
-        methods: s.method.iter().enumerate().map(|(method_idx, m)| Method {
-            name: m.name().parse().unwrap(),
-            request_message: SymbolLink::from_type_name(m.input_type.clone().unwrap()),
-            response_message: SymbolLink::from_type_name(m.output_type.clone().unwrap()),
-            meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32, SERVICE_METHOD_TAG, method_idx as i32]),
-        }).collect(),
-        meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
-    }).collect();
-
-    let messages = descriptor.message_type.iter().enumerate().map(|(message_idx, m)| ProtoMessage::from_descriptor(&descriptor, m, &[MESSAGE_TYPE_TAG, message_idx as i32], namespace.clone())).collect();
-
-    let enums = descriptor.enum_type.iter().enumerate().map(|(enum_idx, e)| Enum::from_descriptor(&descriptor, e, &[ENUM_TYPE_TAG, enum_idx as i32])).collect();
-
-    let view = ProtoFileTemplate { services, messages, enums };
-
-    Ok(view.render()?)
 }
 
 #[cfg(test)]

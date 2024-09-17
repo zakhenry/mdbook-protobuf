@@ -3,6 +3,8 @@ syntax = "proto3";
 package testing;
 
 import "google/protobuf/empty.proto";
+import "helloworld_same_namespace.proto";
+import "goodbye_world.proto";
 
 message Message {
   message NestedType {
@@ -98,4 +100,6 @@ message TypeTest {
 
   OtherMessage other_type = 17;
   NestedType nested_type = 18;
+  helloworld.Foo foreign_type = 19;
+  helloworld.goodbyeworld.Foo foreign_type_deeper = 20;
 }
