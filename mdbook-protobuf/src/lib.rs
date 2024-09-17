@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::convert::Into;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -26,13 +27,14 @@ pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
 
 use anyhow::anyhow;
 use askama::filters::format;
-use log::{debug, info};
-use mdbook::book::{Book, Chapter};
+use log::{debug, info, warn};
+use mdbook::book::{Book, Chapter, SectionNumber};
 use mdbook::preprocess::{Preprocessor, PreprocessorContext};
 use mdbook::BookItem;
 use std::fs::canonicalize;
 
-/// A no-op preprocessor.
+const PREPROCESSOR_NAME: &'static str = "protobuf";
+
 pub struct ProtobufPreprocessor;
 
 impl ProtobufPreprocessor {
@@ -41,15 +43,16 @@ impl ProtobufPreprocessor {
     }
 }
 
-impl Preprocessor for ProtobufPreprocessor {
-    fn name(&self) -> &str {
-        "protobuf"
-    }
+pub struct ProtobufPreprocessorArgs {
+    nest_under: Option<String>,
+    file_descriptor_path: PathBuf,
+}
 
-    fn run(&self, ctx: &PreprocessorContext, mut book: Book) -> Result<Book, Error> {
+impl ProtobufPreprocessorArgs {
+    pub fn new(ctx: &PreprocessorContext) -> Result<Self> {
         let config = ctx
             .config
-            .get_preprocessor(self.name())
+            .get_preprocessor(PREPROCESSOR_NAME)
             .ok_or(anyhow!("Expected config"))?;
 
         let file_descriptor_path = config
@@ -65,9 +68,28 @@ impl Preprocessor for ProtobufPreprocessor {
 
         let file_descriptor_path = canonicalize(path)?;
 
-        info!("fd: {:?}", file_descriptor_path);
+        Ok(Self {
+            file_descriptor_path,
+            nest_under: config
+                .get("nest_under")
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
+        })
+    }
+}
 
-        let file_descriptor_set = read_file_descriptor_set(file_descriptor_path.as_path())?;
+impl Preprocessor for ProtobufPreprocessor {
+    fn name(&self) -> &str {
+        PREPROCESSOR_NAME
+    }
+
+    fn run(&self, ctx: &PreprocessorContext, mut book: Book) -> Result<Book, Error> {
+        info!("book: {:?}", book);
+
+        let args = ProtobufPreprocessorArgs::new(ctx)?;
+
+        info!("fd: {:?}", args.file_descriptor_path);
+
+        let file_descriptor_set = read_file_descriptor_set(args.file_descriptor_path.as_path())?;
 
         info!("found {} proto files", file_descriptor_set.file.len());
 
@@ -91,16 +113,57 @@ impl Preprocessor for ProtobufPreprocessor {
                 ));
         }
 
-        for (namespace_key, namespace) in namespaces {
-            let content = namespace.render()?;
-            let path = PathBuf::from(format!("proto/{}", &namespace_key.replace(".", "/")));
-            let section = BookItem::Chapter(Chapter::new(
-                namespace_key.as_ref(),
-                content,
-                path,
-                Vec::new(),
-            ));
-            book.sections.push(section);
+        // @todo support searching sub chapters
+        let target_chapter = if let Some(nest_under) = args.nest_under {
+            let found_section = book.sections.iter_mut().find_map(|s| match s {
+                BookItem::Chapter(c) => {
+                    if c.name == nest_under {
+                        Some(c)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            });
+
+            if let None = found_section {
+                warn!("`nest_under` config was defined, but no chapter matching name `{}` was found. Note nested chapters are not yet supported.", nest_under);
+            }
+
+            found_section
+        } else {
+            None
+        };
+
+        let chapters: Result<Vec<Chapter>> = namespaces
+            .iter()
+            .map(|(namespace_key, namespace)| {
+                let content = namespace.render()?;
+                let path = PathBuf::from(format!("proto/{}", &namespace_key.replace(".", "/")));
+                Ok(Chapter::new(
+                    namespace_key.as_ref(),
+                    content,
+                    path,
+                    Vec::new(),
+                ))
+            })
+            .collect();
+
+        if let Some(target) = target_chapter {
+            for (idx, mut chapter) in chapters?.into_iter().enumerate() {
+                let mut section_number = target.clone().number.unwrap().0;
+                section_number.push((idx + 1) as u32);
+                chapter.number = Some(SectionNumber(section_number));
+                chapter.parent_names.extend(target.parent_names.clone());
+                chapter.parent_names.push(target.name.clone());
+
+                let section = BookItem::Chapter(chapter);
+
+                target.sub_items.push(section);
+            }
+        } else {
+            book.sections
+                .extend(chapters?.into_iter().map(BookItem::Chapter));
         }
 
         Ok(book)
@@ -112,6 +175,7 @@ impl Preprocessor for ProtobufPreprocessor {
 }
 
 use askama::Template;
+use clap::arg;
 use prost_types::field_descriptor_proto::Type;
 use prost_types::source_code_info::Location;
 
@@ -153,7 +217,7 @@ impl SymbolLink {
     }
 
     fn href(&self) -> String {
-        format!("{}.md#{}", self.path, self.id)
+        format!("/proto/{}.md#{}", self.path, self.id)
     }
 }
 
