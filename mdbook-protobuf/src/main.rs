@@ -2,10 +2,10 @@ use clap::{Arg, ArgMatches, Command};
 use mdbook::book::Book;
 use mdbook::errors::Error;
 use mdbook::preprocess::{CmdPreprocessor, Preprocessor, PreprocessorContext};
+use mdbook_protobuf::ProtobufPreprocessor;
 use semver::{Version, VersionReq};
 use std::io;
 use std::process;
-use mdbook_protobuf::ProtobufPreprocessor;
 
 pub fn make_app() -> Command {
     Command::new("nop-preprocessor")
@@ -18,7 +18,6 @@ pub fn make_app() -> Command {
 }
 
 fn main() {
-
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
     let matches = make_app().get_matches();
 
