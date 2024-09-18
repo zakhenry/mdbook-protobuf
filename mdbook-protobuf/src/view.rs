@@ -1,8 +1,8 @@
 use prost_types::field_descriptor_proto::Type;
 use askama::Template;
 use prost_types::source_code_info::Location;
-use prost_types::{DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto};
-use std::collections::HashSet;
+use prost_types::{DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Template)]
 #[template(path = "symbol_link.html")]
@@ -50,13 +50,15 @@ pub(crate) enum FieldType {
 
 #[derive(Template)]
 #[template(path = "field.html")]
-struct Field {
+struct SimpleField {
     name: String,
     meta: Option<Location>,
     typ: FieldType,
+    optional: bool,
+    oneof_index: Option<i32>
 }
 
-impl Field {
+impl SimpleField {
     fn from_descriptor(
         file_descriptor: &FileDescriptorProto,
         field_descriptor: &FieldDescriptorProto,
@@ -78,8 +80,37 @@ impl Field {
                     t => FieldType::Primitive(t),
                 },
             },
+            optional: field_descriptor.proto3_optional.unwrap_or(false),
+            oneof_index: field_descriptor.oneof_index
         }
     }
+}
+
+#[derive(Template)]
+#[template(path = "oneof_field.html")]
+struct OneOfField {
+    name: String,
+    meta: Option<Location>,
+    fields: Vec<SimpleField>
+}
+
+impl OneOfField {
+    fn from_descriptor(
+        file_descriptor: &FileDescriptorProto,
+        oneof_descriptor: &OneofDescriptorProto,
+        path: &[i32],
+    ) -> Self {
+        Self {
+            name: oneof_descriptor.name().into(),
+            meta: read_source_code_info(file_descriptor, path),
+            fields: Vec::new()
+        }
+    }
+}
+
+enum Field {
+    Simple(SimpleField),
+    OneOf(OneOfField)
 }
 
 #[derive(Template)]
@@ -103,6 +134,31 @@ impl ProtoMessage {
     ) -> Self {
         let mut nested_namespace = namespace_path.clone();
         nested_namespace.push(message_descriptor.name().into());
+
+        let all_fields: Vec<SimpleField> = message_descriptor.field.iter().enumerate().map(|(idx, f)| {
+            let mut nested_path = source_path.to_vec();
+            nested_path.extend(&[MESSAGE_FIELD_TAG, idx as i32]);
+
+            SimpleField::from_descriptor(file_descriptor, f, nested_path.as_ref(), packages)
+        }).collect();
+
+        let mut oneofs: HashMap<i32, OneOfField> = message_descriptor.oneof_decl.iter().enumerate().map(|(idx, o)| {
+            let mut nested_path = source_path.to_vec();
+            nested_path.extend(&[MESSAGE_ONEOF_TAG, idx as i32]);
+            (idx as i32, OneOfField::from_descriptor(file_descriptor, o, nested_path.as_ref()))
+        }).collect();
+
+        let mut fields = Vec::new();
+
+        for field in all_fields {
+            if let Some(oneof_index) = field.oneof_index {
+                oneofs.get_mut(&oneof_index).expect("field should exist").fields.push(field)
+            } else {
+                fields.push(Field::Simple(field));
+            }
+        }
+
+        fields.extend(oneofs.into_values().into_iter().map(Field::OneOf));
 
         Self {
             name: message_descriptor.name().into(),
@@ -129,11 +185,7 @@ impl ProtoMessage {
                     nested_namespace.clone(),
                 )
             }).collect(),
-            fields: message_descriptor.field.iter().enumerate().map(|(idx, f)| {
-                let mut nested_path = source_path.to_vec();
-                nested_path.extend(&[SERVICE_METHOD_TAG, idx as i32]);
-                Field::from_descriptor(file_descriptor, f, nested_path.as_ref(), packages)
-            }).collect(),
+            fields,
         }
     }
 
@@ -277,6 +329,8 @@ impl ProtoNamespaceTemplate {
 // these tags come from FileDescriptorProto - prost doesn't provide a way to read this as-yet
 // see https://github.com/tokio-rs/prost/issues/137 const SERVICE_METHOD_TAG: i32 = 2; const DESCRIPTOR_FIELD_TAG: i32 = 2;
 const SERVICE_METHOD_TAG: i32 = 2;
+const MESSAGE_FIELD_TAG: i32 = 2;
+const MESSAGE_ONEOF_TAG: i32 = 8;
 const MESSAGE_TYPE_TAG: i32 = 4;
 const ENUM_TYPE_TAG: i32 = 5;
 const SERVICE_TAG: i32 = 6;

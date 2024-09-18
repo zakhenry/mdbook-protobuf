@@ -7,7 +7,12 @@
     {% endif %}
 
     {% for field in fields %}
-    {{ field|safe }}
+    {% match field %}
+        {% when Field::Simple with (simple_field) %}
+            {{ simple_field|safe }}
+        {% when Field::OneOf with (oneof) %}
+            {{ oneof|safe }}
+    {% endmatch %}
     {% endfor %}
 
     {% for message in nested_message %}

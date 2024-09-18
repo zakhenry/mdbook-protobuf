@@ -1,6 +1,8 @@
 <fieldset class="field">
     <label>{{name}}</label>
-
+{% if optional %}
+<span class="optional">(optional)</span>
+{% endif %}
 <strong class="type">
     {% match typ %}
         {% when FieldType::Primitive with (primitive) %}

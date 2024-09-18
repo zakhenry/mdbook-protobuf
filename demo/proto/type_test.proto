@@ -49,8 +49,9 @@ message OtherMessage {
     float nested_float = 1;
   }
 
+  // comment on `oneof_type`
   oneof oneof_type {
-    double oneof_double_type = 1;
+    double oneof_double_type = 1; // comment on oneof_double_type
     float oneof_float_type = 2;
     int32 oneof_int32_type = 3;
     int64 oneof_int64_type = 4;
@@ -102,4 +103,5 @@ message TypeTest {
   NestedType nested_type = 18;
   helloworld.Foo foreign_type = 19;
   helloworld.goodbyeworld.Foo foreign_type_deeper = 20;
+  optional double optional_double = 21;
 }
