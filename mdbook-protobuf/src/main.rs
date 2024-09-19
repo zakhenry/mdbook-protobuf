@@ -1,11 +1,12 @@
-use clap::{Arg, ArgMatches, Command};
-use mdbook::book::Book;
-use mdbook::errors::Error;
-use mdbook::preprocess::{CmdPreprocessor, Preprocessor, PreprocessorContext};
-use mdbook_protobuf::ProtobufPreprocessor;
-use semver::{Version, VersionReq};
 use std::io;
 use std::process;
+
+use clap::{Arg, ArgMatches, Command};
+use mdbook::errors::Error;
+use mdbook::preprocess::{CmdPreprocessor, Preprocessor};
+use semver::{Version, VersionReq};
+
+use mdbook_protobuf::ProtobufPreprocessor;
 
 pub fn make_app() -> Command {
     Command::new("nop-preprocessor")

@@ -28,4 +28,15 @@
     {% for enum in nested_enum %}
     {{ enum|safe }}
     {% endfor %}
+
+    {% if backlinks.len() > 0 %}
+    <fieldset>
+        <label>backlinks</label>
+        <ul>
+            {% for link in backlinks %}
+            <li>{{ link|safe }}</li>
+            {% endfor %}
+        </ul>
+    </fieldset>
+    {% endif %}
 </fieldset>

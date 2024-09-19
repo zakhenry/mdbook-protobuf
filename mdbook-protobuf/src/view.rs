@@ -4,12 +4,19 @@ use prost_types::source_code_info::Location;
 use prost_types::{DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Template)]
+#[derive(Clone, Eq, Hash, PartialEq)]
+enum SymbolProperty {
+    EnumVariant(String),
+    FieldName(String),
+}
+
+#[derive(Template, Clone, Eq, Hash, PartialEq)]
 #[template(path = "symbol_link.html")]
-struct SymbolLink {
+pub(crate) struct SymbolLink {
     label: String,
     id: String,
     path: String,
+    property: Option<SymbolProperty>,
 }
 
 impl SymbolLink {
@@ -27,12 +34,14 @@ impl SymbolLink {
                 label,
                 id: type_name[1..].replace(&format!("{}.", path), ""),
                 path: path.to_string().replace(".", "/"),
+                property: None,
             }
         } else {
             Self {
                 label,
                 id: type_name[1..].to_string(),
                 path: "".into(),
+                property: None,
             }
         }
     }
@@ -56,7 +65,7 @@ struct SimpleField {
     typ: FieldType,
     optional: bool,
     oneof_index: Option<i32>,
-    deprecated: bool
+    deprecated: bool,
 }
 
 impl SimpleField {
@@ -83,7 +92,7 @@ impl SimpleField {
             },
             optional: field_descriptor.proto3_optional.unwrap_or(false),
             oneof_index: field_descriptor.oneof_index,
-            deprecated: field_descriptor.clone().options.map_or(false, |o|o.deprecated())
+            deprecated: field_descriptor.clone().options.map_or(false, |o| o.deprecated()),
         }
     }
 }
@@ -93,7 +102,7 @@ impl SimpleField {
 struct OneOfField {
     name: String,
     meta: Option<Location>,
-    fields: Vec<SimpleField>
+    fields: Vec<SimpleField>,
 }
 
 impl OneOfField {
@@ -105,26 +114,28 @@ impl OneOfField {
         Self {
             name: oneof_descriptor.name().into(),
             meta: read_source_code_info(file_descriptor, path),
-            fields: Vec::new()
+            fields: Vec::new(),
         }
     }
 }
 
 enum Field {
     Simple(SimpleField),
-    OneOf(OneOfField)
+    OneOf(OneOfField),
 }
 
 #[derive(Template)]
 #[template(path = "message.html")]
-struct ProtoMessage {
+pub(crate) struct ProtoMessage {
     name: String,
     meta: Option<Location>,
     nested_message: Vec<ProtoMessage>,
     nested_enum: Vec<Enum>,
     fields: Vec<Field>,
     namespace: Vec<String>,
-    deprecated: bool
+    deprecated: bool,
+    pub self_link: SymbolLink,
+    backlinks: Vec<SymbolLink>,
 }
 
 impl ProtoMessage {
@@ -134,7 +145,10 @@ impl ProtoMessage {
         source_path: &[i32],
         namespace_path: Vec<String>,
         packages: &HashSet<String>,
+        package: String,
+        symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>,
     ) -> Self {
+        let name: String = message_descriptor.name().into();
         let mut nested_namespace = namespace_path.clone();
         nested_namespace.push(message_descriptor.name().into());
 
@@ -153,7 +167,24 @@ impl ProtoMessage {
 
         let mut fields = Vec::new();
 
+        let self_link = SymbolLink {
+            label: name.clone(),
+            id: name.clone(),
+            path: package.replace(".", "/"),
+            property: None,
+        };
+
         for field in all_fields {
+            if let FieldType::Symbol(symbol_link) = &field.typ {
+                let mut field_ref = self_link.clone();
+                field_ref.property = Some(SymbolProperty::FieldName(field.name.clone()));
+
+                symbol_usages
+                    .entry(symbol_link.clone())
+                    .or_default()
+                    .push(field_ref.clone());
+            }
+
             if let Some(oneof_index) = field.oneof_index {
                 oneofs.get_mut(&oneof_index).expect("field should exist").fields.push(field)
             } else {
@@ -164,7 +195,8 @@ impl ProtoMessage {
         fields.extend(oneofs.into_values().into_iter().map(Field::OneOf));
 
         Self {
-            name: message_descriptor.name().into(),
+            name,
+            self_link,
             namespace: namespace_path,
             meta: read_source_code_info(file_descriptor, source_path),
             nested_message: message_descriptor.nested_type.iter().enumerate().map(|(idx, m)| {
@@ -176,6 +208,8 @@ impl ProtoMessage {
                     nested_path.as_ref(),
                     nested_namespace.clone(),
                     packages,
+                    package.clone(),
+                    symbol_usages,
                 )
             }).collect(),
             nested_enum: message_descriptor.enum_type.iter().enumerate().map(|(idx, m)| {
@@ -189,7 +223,8 @@ impl ProtoMessage {
                 )
             }).collect(),
             fields,
-            deprecated: message_descriptor.options.clone().map_or(false, |o|o.deprecated())
+            deprecated: message_descriptor.options.clone().map_or(false, |o| o.deprecated()),
+            backlinks: Vec::new(),
         }
     }
 
@@ -200,21 +235,26 @@ impl ProtoMessage {
             format!("{}.{}", self.namespace.join("."), self.name)
         }
     }
+
+    pub(crate) fn set_backlinks(&mut self, backlinks: Vec<SymbolLink>) {
+        self.backlinks = backlinks
+    }
 }
 
 struct EnumValue {
     tag: i32,
     name: String,
-    deprecated: bool
+    deprecated: bool,
 }
 
 #[derive(Template)]
 #[template(path = "enum.html")]
-struct Enum {
+pub(crate) struct Enum {
     name: String,
     meta: Option<Location>,
     values: Vec<EnumValue>,
     namespace: Vec<String>,
+    backlinks: Vec<SymbolLink>,
 }
 
 impl Enum {
@@ -231,10 +271,11 @@ impl Enum {
                 EnumValue {
                     name: v.name().to_string(),
                     tag: v.number(),
-                    deprecated: v.clone().options.map_or(false, |o|o.deprecated())
+                    deprecated: v.clone().options.map_or(false, |o| o.deprecated()),
                 }
             }).collect(),
             namespace,
+            backlinks: Vec::new(),
         }
     }
 
@@ -254,7 +295,7 @@ struct Method {
     request_message: SymbolLink,
     response_message: SymbolLink,
     meta: Option<Location>,
-    deprecated: bool
+    deprecated: bool,
 }
 
 #[derive(Template)]
@@ -275,33 +316,55 @@ pub struct ProtoFileDescriptorTemplate {
 }
 
 impl ProtoFileDescriptorTemplate {
-    pub(crate) fn from_descriptor(descriptor: FileDescriptorProto, packages: &HashSet<String>) -> Self {
+    pub(crate) fn from_descriptor(descriptor: FileDescriptorProto, packages: &HashSet<String>, symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>) -> Self {
         let namespace = vec![];
 
-        let services = descriptor.service.iter().enumerate().map(|(service_idx, s)| Service {
-            name: s.name().into(),
-            methods: s.method.iter().enumerate().map(|(method_idx, m)| Method {
-                name: m.name().parse().unwrap(),
-                request_message: SymbolLink::from_type_name(
-                    m.input_type.clone().unwrap(),
-                    packages,
-                ),
-                response_message: SymbolLink::from_type_name(
-                    m.output_type.clone().unwrap(),
-                    packages,
-                ),
-                meta: read_source_code_info(
-                    &descriptor,
-                    &[
-                        SERVICE_TAG,
-                        service_idx as i32,
-                        SERVICE_METHOD_TAG,
-                        method_idx as i32,
-                    ],
-                ),
-                deprecated: m.options.clone().map_or(false, |o|o.deprecated())
-            }).collect(),
-            meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
+
+        let services = descriptor.service.iter().enumerate().map(|(service_idx, s)| {
+            Service {
+                name: s.name().into(),
+                methods: s.method.iter().enumerate().map(|(method_idx, m)| {
+                    let method_name: String = m.name().parse().unwrap();
+                    let method_link = SymbolLink::from_type_name(method_name.clone(), packages);
+
+                    let request_message = SymbolLink::from_type_name(
+                        m.input_type.clone().unwrap(),
+                        packages,
+                    );
+
+                    symbol_usages
+                        .entry(request_message.clone())
+                        .or_default()
+                        .push(method_link.clone());
+
+                    let response_message = SymbolLink::from_type_name(
+                        m.output_type.clone().unwrap(),
+                        packages,
+                    );
+
+                    symbol_usages
+                        .entry(response_message.clone())
+                        .or_default()
+                        .push(method_link);
+
+                    Method {
+                        name: method_name,
+                        request_message,
+                        response_message,
+                        meta: read_source_code_info(
+                            &descriptor,
+                            &[
+                                SERVICE_TAG,
+                                service_idx as i32,
+                                SERVICE_METHOD_TAG,
+                                method_idx as i32,
+                            ],
+                        ),
+                        deprecated: m.options.clone().map_or(false, |o| o.deprecated()),
+                    }
+                }).collect(),
+                meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
+            }
         }).collect();
 
         let messages = descriptor.message_type.iter().enumerate().map(|(message_idx, m)| {
@@ -311,6 +374,8 @@ impl ProtoFileDescriptorTemplate {
                 &[MESSAGE_TYPE_TAG, message_idx as i32],
                 namespace.clone(),
                 packages,
+                descriptor.package().to_string(),
+                symbol_usages
             )
         }).collect();
 
@@ -338,10 +403,36 @@ pub struct ProtoNamespaceTemplate {
     files: Vec<ProtoFileDescriptorTemplate>,
 }
 
+pub(crate) enum Symbol<'a> {
+    Enum(&'a mut Enum),
+    Message(&'a mut ProtoMessage)
+}
+
 impl ProtoNamespaceTemplate {
     pub(crate) fn add_file(&mut self, file: ProtoFileDescriptorTemplate) {
         self.files.push(file);
     }
+
+    fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mut mutator: F)
+    where F: Fn(Symbol) + Clone {
+        for message in messages {
+            mutator(Symbol::Message(message));
+            Self::mutate_messages(&mut message.nested_message, mutator.clone());
+        }
+    }
+
+    pub(crate) fn mutate_symbols<F>(&mut self, mut mutator: F)
+        where F: Fn(Symbol) + Clone {
+
+        for mut file in &mut self.files {
+            Self::mutate_messages(&mut file.messages, mutator.clone());
+
+            for mut enumType in &mut file.enums {
+                mutator(Symbol::Enum(&mut enumType))
+            }
+        }
+
+        }
 }
 
 // these tags come from FileDescriptorProto - prost doesn't provide a way to read this as-yet

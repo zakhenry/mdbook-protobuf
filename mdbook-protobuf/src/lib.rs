@@ -28,6 +28,8 @@ mod view;
 mod primitive;
 
 use view::{ProtoFileDescriptorTemplate, ProtoNamespaceTemplate};
+use crate::view::Symbol;
+use crate::view::SymbolLink;
 
 pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
     let mut file = File::open(path)?;
@@ -94,6 +96,8 @@ impl Preprocessor for ProtobufPreprocessor {
 
         let mut namespaces: BTreeMap<String, ProtoNamespaceTemplate> = BTreeMap::new();
 
+        let mut symbol_usages: HashMap<SymbolLink, Vec<SymbolLink>> = HashMap::new();
+
         let packages: HashSet<String> = file_descriptor_set.file.iter().map(|f| f.package().to_string()).collect();
 
         for file_descriptor in file_descriptor_set.file {
@@ -102,8 +106,11 @@ impl Preprocessor for ProtobufPreprocessor {
             value.add_file(ProtoFileDescriptorTemplate::from_descriptor(
                 file_descriptor,
                 &packages,
+                &mut symbol_usages
             ));
         }
+
+        assign_backlinks(&mut namespaces, symbol_usages);
 
         // @todo support searching sub chapters
         let target_chapter = if let Some(nest_under) = args.nest_under {
@@ -159,6 +166,23 @@ impl Preprocessor for ProtobufPreprocessor {
 
     fn supports_renderer(&self, renderer: &str) -> bool {
         renderer != "not-supported"
+    }
+}
+
+fn assign_backlinks(document: &mut BTreeMap<String, ProtoNamespaceTemplate>, symbol_usages: HashMap<SymbolLink, Vec<SymbolLink>>) {
+    for (_, namespace) in document {
+
+        namespace.mutate_symbols(|symbol| {
+            match symbol {
+                Symbol::Enum(enum_symbol) => {}
+                Symbol::Message(message_symbol) => {
+                    if let Some(usages) = symbol_usages.get(&message_symbol.self_link) {
+                        message_symbol.set_backlinks(usages.clone())
+                    }
+                }
+            }
+        })
+
     }
 }
 
