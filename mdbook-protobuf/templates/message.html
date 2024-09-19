@@ -1,5 +1,11 @@
 <fieldset class="message" id="{{Self::href_id(self)}}">
-    <label>{{name}}</label>
+    <label>
+        {% if deprecated %}
+        <s>{{ name }}</s>
+        {% else %}
+        <span>{{ name }}</span>
+        {% endif %}
+    </label>
     {% if let Some(meta) = meta %}
     {% if let Some(comment) = meta.leading_comments %}
     <em>{{comment}}</em>

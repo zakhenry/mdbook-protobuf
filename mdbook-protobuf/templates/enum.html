@@ -2,7 +2,13 @@
     <label>{{name}}</label>
     <ul>
         {% for value in values %}
-        <li>{{ value }}</li>
+        <li class="enum-value" data-tag="{{value.tag}}">
+            {% if value.deprecated %}
+            <s>{{ value.name }}</s>
+            {% else %}
+            <span>{{ value.name }}</span>
+            {% endif %}
+        </li>
         {% endfor %}
     </ul>
 </fieldset>

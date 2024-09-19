@@ -1,5 +1,11 @@
 <fieldset class="field">
-    <label>{{name}}</label>
+    <label>
+        {% if deprecated %}
+        <s>{{ name }}</s>
+        {% else %}
+        <span>{{ name }}</span>
+        {% endif %}
+    </label>
 {% if optional %}
 <span class="optional">(optional)</span>
 {% endif %}

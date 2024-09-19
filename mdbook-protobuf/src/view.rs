@@ -55,7 +55,8 @@ struct SimpleField {
     meta: Option<Location>,
     typ: FieldType,
     optional: bool,
-    oneof_index: Option<i32>
+    oneof_index: Option<i32>,
+    deprecated: bool
 }
 
 impl SimpleField {
@@ -81,7 +82,8 @@ impl SimpleField {
                 },
             },
             optional: field_descriptor.proto3_optional.unwrap_or(false),
-            oneof_index: field_descriptor.oneof_index
+            oneof_index: field_descriptor.oneof_index,
+            deprecated: field_descriptor.clone().options.map_or(false, |o|o.deprecated())
         }
     }
 }
@@ -122,6 +124,7 @@ struct ProtoMessage {
     nested_enum: Vec<Enum>,
     fields: Vec<Field>,
     namespace: Vec<String>,
+    deprecated: bool
 }
 
 impl ProtoMessage {
@@ -186,6 +189,7 @@ impl ProtoMessage {
                 )
             }).collect(),
             fields,
+            deprecated: message_descriptor.options.clone().map_or(false, |o|o.deprecated())
         }
     }
 
@@ -198,12 +202,18 @@ impl ProtoMessage {
     }
 }
 
+struct EnumValue {
+    tag: i32,
+    name: String,
+    deprecated: bool
+}
+
 #[derive(Template)]
 #[template(path = "enum.html")]
 struct Enum {
     name: String,
     meta: Option<Location>,
-    values: Vec<String>,
+    values: Vec<EnumValue>,
     namespace: Vec<String>,
 }
 
@@ -217,7 +227,13 @@ impl Enum {
         Self {
             name: enum_descriptor.name().into(),
             meta: read_source_code_info(file_descriptor, path),
-            values: enum_descriptor.value.iter().map(|v| v.name().to_string()).collect(),
+            values: enum_descriptor.value.iter().map(|v| {
+                EnumValue {
+                    name: v.name().to_string(),
+                    tag: v.number(),
+                    deprecated: v.clone().options.map_or(false, |o|o.deprecated())
+                }
+            }).collect(),
             namespace,
         }
     }
@@ -238,6 +254,7 @@ struct Method {
     request_message: SymbolLink,
     response_message: SymbolLink,
     meta: Option<Location>,
+    deprecated: bool
 }
 
 #[derive(Template)]
@@ -282,6 +299,7 @@ impl ProtoFileDescriptorTemplate {
                         method_idx as i32,
                     ],
                 ),
+                deprecated: m.options.clone().map_or(false, |o|o.deprecated())
             }).collect(),
             meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
         }).collect();

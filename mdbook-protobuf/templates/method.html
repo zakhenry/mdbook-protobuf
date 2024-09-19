@@ -1,5 +1,9 @@
-<div class="method">
-    <h2>{{name}}</h2>
+<fieldset class="method">
+    {% if deprecated %}
+    <s>{{ name }}</s>
+    {% else %}
+    <span>{{ name }}</span>
+    {% endif %}
     {% if let Some(meta) = meta %}
     {% if let Some(comment) = meta.leading_comments %}
     <em>{{comment}}</em>
@@ -7,4 +11,4 @@
     {% endif %}
     <h2>{{request_message|safe}}</h2>
     <h2>{{response_message|safe}}</h2>
-</div>
+</fieldset>

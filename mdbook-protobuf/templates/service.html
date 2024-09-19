@@ -1,5 +1,5 @@
-<div class="service">
-    <h2>{{name}}</h2>
+<fieldset class="service">
+    <label>{{ name }}</label>
     {% if let Some(meta) = meta %}
        {% if let Some(comment) = meta.leading_comments %}
          <em>{{comment}}</em>
@@ -8,4 +8,4 @@
     {% for method in methods %}
         {{ method|safe }}
     {% endfor %}
-</div>
+</fieldset>

@@ -6,6 +6,13 @@ import "google/protobuf/empty.proto";
 import "helloworld_same_namespace.proto";
 import "goodbye_world.proto";
 
+service TypeTestService {
+
+  rpc SayHello (stream Message) returns (stream OtherMessage) {
+    option deprecated = true;
+  }
+}
+
 message Message {
   message NestedType {
     float nested_float = 1;
@@ -34,6 +41,7 @@ enum Enum {
   VALUE_1 = 1;
   VALUE_3 = 3;
   VALUE_7 = 7;
+  VALUE_9 = 9 [deprecated = true];
 }
 
 message RepeatedTypes {
@@ -103,5 +111,11 @@ message TypeTest {
   NestedType nested_type = 18;
   helloworld.Foo foreign_type = 19;
   helloworld.goodbyeworld.Foo foreign_type_deeper = 20;
-  optional double optional_double = 21;
+  optional bool optional_bool = 21;
+  double deprecated_bool = 22 [deprecated = true];
+  // this whole message is deprecated
+  message DeprecatedMessage {
+    option deprecated = true;
+    bool field_name = 1;
+  }
 }
