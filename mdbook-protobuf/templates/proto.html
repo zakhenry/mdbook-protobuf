@@ -1,21 +1,27 @@
 <fieldset class="proto">
     <label>{{filename }}</label>
+    {% if services.len() > 0 %}
     <fieldset class="services">
         <label>Services</label>
         {% for service in services %}
             {{ service|safe }}
         {% endfor %}
     </fieldset>
+    {% endif %}
+    {% if messages.len() > 0 %}
     <fieldset class="messages">
         <label>Messages</label>
         {% for message in messages %}
             {{ message|safe }}
         {% endfor %}
     </fieldset>
+    {% endif %}
+    {% if enums.len() > 0 %}
     <fieldset class="enums">
         <label>Enums</label>
         {% for enum in enums %}
             {{ enum|safe }}
         {% endfor %}
     </fieldset>
+    {% endif %}
 </fieldset>

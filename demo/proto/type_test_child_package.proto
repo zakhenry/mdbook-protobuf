@@ -1,7 +1,7 @@
 
 syntax = "proto3";
 
-package helloworld.goodbyeworld;
+package testing.nested;
 
 enum Foo {
   UNKNOWN = 0;

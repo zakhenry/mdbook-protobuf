@@ -3,8 +3,8 @@ syntax = "proto3";
 package testing;
 
 import "google/protobuf/empty.proto";
-import "helloworld_same_namespace.proto";
-import "goodbye_world.proto";
+import "type_test_same_namespace.proto";
+import "type_test_child_package.proto";
 
 service TypeTestService {
 
@@ -109,8 +109,8 @@ message TypeTest {
 
   OtherMessage other_type = 17;
   NestedType nested_type = 18;
-  helloworld.Foo foreign_type = 19;
-  helloworld.goodbyeworld.Foo foreign_type_deeper = 20;
+  Foo foreign_type = 19;
+  testing.nested.Foo foreign_type_deeper = 20;
   optional bool optional_bool = 21;
   double deprecated_bool = 22 [deprecated = true];
   // this whole message is deprecated
