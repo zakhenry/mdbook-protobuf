@@ -6,17 +6,11 @@ use std::collections::{HashMap, HashSet};
 
 pub(crate) trait Linked {
     fn symbol_link(&self) -> &SymbolLink;
-    fn fqsl(&self) -> &String {
-        &self.symbol_link().fqsl()
+    fn fqsl(&self) -> String {
+        self.symbol_link().fqsl()
     }
 
     fn set_backlinks(&mut self, backlinks: Backlinks);
-}
-
-#[derive(Clone, Eq, Hash, PartialEq)]
-enum SymbolProperty {
-    EnumVariant(String),
-    FieldName(String),
 }
 
 #[derive(Template, Default)]
@@ -32,49 +26,62 @@ impl Backlinks {
 #[derive(Template, Clone, Eq, Hash, PartialEq)]
 #[template(path = "symbol_link.html")]
 pub(crate) struct SymbolLink {
-    label: String,
-    id: String,
+    symbol: String,
     path: String,
-    property: Option<SymbolProperty>,
-    /// fully qualified symbol link
-    fqsl: String,
+    property: Option<String>,
 }
 
 impl SymbolLink {
+    // @todo refactor me, this function is a mess but write some tests first!
     fn from_fqsl(fqsl: String, packages: &HashSet<String>) -> Self {
-        let label = if let Some(index) = &fqsl.rfind('.') {
-            &fqsl[index + 1..]
-        } else {
-            &fqsl
-        }.into();
 
-        let best_match = packages.iter().filter(|value| fqsl[1..].starts_with(value.as_str())).max_by_key(|value| value.len());
+        let (fqsl_no_prop, property) = if let Some((fqsl_no_prop, property)) = fqsl.split_once("::") {
+            (fqsl_no_prop.to_string(), Some(property.to_string()))
+        } else {
+            (fqsl.clone(), None)
+        };
+
+        let best_match = packages.iter().filter(|value| fqsl_no_prop[1..].starts_with(value.as_str())).max_by_key(|value| value.len());
 
         if let Some(path) = best_match {
             Self {
-                label,
-                id: fqsl[1..].replace(&format!("{}.", path), ""),
+                symbol: fqsl_no_prop[1..].replace(&format!("{}.", path), ""),
                 path: path.to_string().replace(".", "/"),
-                property: None,
-                fqsl,
+                property,
             }
         } else {
             Self {
-                label,
-                id: fqsl[1..].to_string(),
+                symbol: fqsl_no_prop[1..].to_string(),
                 path: "".into(),
-                property: None,
-                fqsl,
+                property,
             }
         }
     }
 
-    fn fqsl(&self) -> &String {
-        &self.fqsl
+
+    fn id(&self) -> String {
+        if let Some(property) = &self.property {
+            format!("{}::{}", self.symbol, property)
+        } else {
+            self.symbol.to_string()
+        }
+    }
+
+    fn fqsl(&self) -> String {
+        format!(".{}.{}", self.path, self.id())
+    }
+
+    fn label(&self) -> String {
+        let fqsl = self.fqsl();
+        if let Some(index) = fqsl.rfind('.') {
+            fqsl[index + 1..].to_string()
+        } else {
+            fqsl
+        }
     }
 
     fn href(&self) -> String {
-        format!("/proto/{}.md#{}", self.path, self.id)
+        format!("/proto/{}.md#{}", self.path, self.id())
     }
 }
 
@@ -93,6 +100,7 @@ struct SimpleField {
     optional: bool,
     oneof_index: Option<i32>,
     deprecated: bool,
+    self_link: SymbolLink
 }
 
 impl SimpleField {
@@ -101,9 +109,15 @@ impl SimpleField {
         field_descriptor: &FieldDescriptorProto,
         path: &[i32],
         packages: &HashSet<String>,
+        parent_symbol: &SymbolLink
     ) -> Self {
+
+        let name: String = field_descriptor.name().into();
+        let mut self_link = parent_symbol.clone();
+        self_link.property = Some(name.clone());
+
         Self {
-            name: field_descriptor.name().into(),
+            name,
             meta: read_source_code_info(file_descriptor, path),
             typ: match field_descriptor.r#type {
                 None => {
@@ -120,6 +134,7 @@ impl SimpleField {
             optional: field_descriptor.proto3_optional.unwrap_or(false),
             oneof_index: field_descriptor.oneof_index,
             deprecated: field_descriptor.clone().options.map_or(false, |o| o.deprecated()),
+            self_link
         }
     }
 }
@@ -179,11 +194,14 @@ impl ProtoMessage {
         let mut nested_namespace = namespace_path.clone();
         nested_namespace.push(message_descriptor.name().into());
 
+        let fqsl = format!(".{}.{}", package, nested_namespace.join("."));
+        let self_link = SymbolLink::from_fqsl(fqsl, packages);
+
         let all_fields: Vec<SimpleField> = message_descriptor.field.iter().enumerate().map(|(idx, f)| {
             let mut nested_path = source_path.to_vec();
             nested_path.extend(&[MESSAGE_FIELD_TAG, idx as i32]);
 
-            SimpleField::from_descriptor(file_descriptor, f, nested_path.as_ref(), packages)
+            SimpleField::from_descriptor(file_descriptor, f, nested_path.as_ref(), packages, &self_link)
         }).collect();
 
         let mut oneofs: HashMap<i32, OneOfField> = message_descriptor.oneof_decl.iter().enumerate().map(|(idx, o)| {
@@ -194,13 +212,10 @@ impl ProtoMessage {
 
         let mut fields = Vec::new();
 
-        let fqsl = format!(".{}.{}", package, nested_namespace.join("."));
-        let self_link = SymbolLink::from_fqsl(fqsl, packages);
-
         for field in all_fields {
             if let FieldType::Symbol(symbol_link) = &field.typ {
                 let mut field_ref = self_link.clone();
-                field_ref.property = Some(SymbolProperty::FieldName(field.name.clone()));
+                field_ref.property = Some(field.name.clone());
 
                 symbol_usages.entry(symbol_link.clone()).or_default().push(field_ref.clone());
             }
@@ -247,15 +262,6 @@ impl ProtoMessage {
             fields,
             deprecated: message_descriptor.options.clone().map_or(false, |o| o.deprecated()),
             backlinks: Default::default(),
-        }
-    }
-
-    #[deprecated]
-    fn href_id(&self) -> String {
-        if self.namespace.is_empty() {
-            self.name.clone()
-        } else {
-            format!("{}.{}", self.namespace.join("."), self.name)
         }
     }
 }
@@ -315,15 +321,6 @@ impl Enum {
             namespace,
             backlinks: Default::default(),
             self_link: SymbolLink::from_fqsl(fqsl, packages),
-        }
-    }
-
-    #[deprecated]
-    fn href_id(&self) -> String {
-        if self.namespace.is_empty() {
-            self.name.clone()
-        } else {
-            format!("{}.{}", self.namespace.join("."), self.name)
         }
     }
 }
