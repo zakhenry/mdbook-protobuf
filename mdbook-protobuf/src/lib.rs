@@ -28,7 +28,7 @@ mod view;
 mod primitive;
 
 use view::{ProtoFileDescriptorTemplate, ProtoNamespaceTemplate};
-use crate::view::Symbol;
+use crate::view::{Backlinks, Linked};
 use crate::view::SymbolLink;
 
 pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
@@ -173,13 +173,8 @@ fn assign_backlinks(document: &mut BTreeMap<String, ProtoNamespaceTemplate>, sym
     for (_, namespace) in document {
 
         namespace.mutate_symbols(|symbol| {
-            match symbol {
-                Symbol::Enum(enum_symbol) => {}
-                Symbol::Message(message_symbol) => {
-                    if let Some(usages) = symbol_usages.get(&message_symbol.self_link) {
-                        message_symbol.set_backlinks(usages.clone())
-                    }
-                }
+            if let Some(usages) = symbol_usages.get(&symbol.symbol_link()) {
+                symbol.set_backlinks(Backlinks::new(usages.clone()))
             }
         })
 

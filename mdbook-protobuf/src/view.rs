@@ -4,10 +4,29 @@ use prost_types::source_code_info::Location;
 use prost_types::{DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto};
 use std::collections::{HashMap, HashSet};
 
+pub(crate) trait Linked {
+    fn symbol_link(&self) -> &SymbolLink;
+    fn fqsl(&self) -> &String {
+        &self.symbol_link().fqsl()
+    }
+
+    fn set_backlinks(&mut self, backlinks: Backlinks);
+}
+
 #[derive(Clone, Eq, Hash, PartialEq)]
 enum SymbolProperty {
     EnumVariant(String),
     FieldName(String),
+}
+
+#[derive(Template, Default)]
+#[template(path = "backlinks.html")]
+pub(crate) struct Backlinks {
+    links: Vec<SymbolLink>
+}
+
+impl Backlinks {
+    pub(crate) fn new(links: Vec<SymbolLink>) -> Self { Self { links } }
 }
 
 #[derive(Template, Clone, Eq, Hash, PartialEq)]
@@ -17,33 +36,41 @@ pub(crate) struct SymbolLink {
     id: String,
     path: String,
     property: Option<SymbolProperty>,
+    /// fully qualified symbol link
+    fqsl: String,
 }
 
 impl SymbolLink {
-    fn from_type_name(type_name: String, packages: &HashSet<String>) -> Self {
-        let label = if let Some(index) = &type_name.rfind('.') {
-            &type_name[index + 1..]
+    fn from_fqsl(fqsl: String, packages: &HashSet<String>) -> Self {
+        let label = if let Some(index) = &fqsl.rfind('.') {
+            &fqsl[index + 1..]
         } else {
-            &type_name
+            &fqsl
         }.into();
 
-        let best_match = packages.iter().filter(|value| type_name[1..].starts_with(value.as_str())).max_by_key(|value| value.len());
+        let best_match = packages.iter().filter(|value| fqsl[1..].starts_with(value.as_str())).max_by_key(|value| value.len());
 
         if let Some(path) = best_match {
             Self {
                 label,
-                id: type_name[1..].replace(&format!("{}.", path), ""),
+                id: fqsl[1..].replace(&format!("{}.", path), ""),
                 path: path.to_string().replace(".", "/"),
                 property: None,
+                fqsl,
             }
         } else {
             Self {
                 label,
-                id: type_name[1..].to_string(),
+                id: fqsl[1..].to_string(),
                 path: "".into(),
                 property: None,
+                fqsl,
             }
         }
+    }
+
+    fn fqsl(&self) -> &String {
+        &self.fqsl
     }
 
     fn href(&self) -> String {
@@ -83,7 +110,7 @@ impl SimpleField {
                     FieldType::Unimplemented // todo look up fully qualified from index.
                 }
                 Some(label) => match Type::try_from(label).expect("should be of type") {
-                    Type::Enum | Type::Message => FieldType::Symbol(SymbolLink::from_type_name(
+                    Type::Enum | Type::Message => FieldType::Symbol(SymbolLink::from_fqsl(
                         field_descriptor.type_name().to_string(),
                         packages,
                     )),
@@ -134,8 +161,8 @@ pub(crate) struct ProtoMessage {
     fields: Vec<Field>,
     namespace: Vec<String>,
     deprecated: bool,
-    pub self_link: SymbolLink,
-    backlinks: Vec<SymbolLink>,
+    self_link: SymbolLink,
+    backlinks: Backlinks,
 }
 
 impl ProtoMessage {
@@ -167,22 +194,15 @@ impl ProtoMessage {
 
         let mut fields = Vec::new();
 
-        let self_link = SymbolLink {
-            label: name.clone(),
-            id: name.clone(),
-            path: package.replace(".", "/"),
-            property: None,
-        };
+        let fqsl = format!(".{}.{}", package, nested_namespace.join("."));
+        let self_link = SymbolLink::from_fqsl(fqsl, packages);
 
         for field in all_fields {
             if let FieldType::Symbol(symbol_link) = &field.typ {
                 let mut field_ref = self_link.clone();
                 field_ref.property = Some(SymbolProperty::FieldName(field.name.clone()));
 
-                symbol_usages
-                    .entry(symbol_link.clone())
-                    .or_default()
-                    .push(field_ref.clone());
+                symbol_usages.entry(symbol_link.clone()).or_default().push(field_ref.clone());
             }
 
             if let Some(oneof_index) = field.oneof_index {
@@ -219,15 +239,18 @@ impl ProtoMessage {
                     file_descriptor,
                     m,
                     nested_path.as_ref(),
+                    packages,
+                    package.clone(),
                     nested_namespace.clone(),
                 )
             }).collect(),
             fields,
             deprecated: message_descriptor.options.clone().map_or(false, |o| o.deprecated()),
-            backlinks: Vec::new(),
+            backlinks: Default::default(),
         }
     }
 
+    #[deprecated]
     fn href_id(&self) -> String {
         if self.namespace.is_empty() {
             self.name.clone()
@@ -235,8 +258,14 @@ impl ProtoMessage {
             format!("{}.{}", self.namespace.join("."), self.name)
         }
     }
+}
 
-    pub(crate) fn set_backlinks(&mut self, backlinks: Vec<SymbolLink>) {
+impl Linked for ProtoMessage {
+    fn symbol_link(&self) -> &SymbolLink {
+        &self.self_link
+    }
+
+    fn set_backlinks(&mut self, backlinks: Backlinks) {
         self.backlinks = backlinks
     }
 }
@@ -254,7 +283,8 @@ pub(crate) struct Enum {
     meta: Option<Location>,
     values: Vec<EnumValue>,
     namespace: Vec<String>,
-    backlinks: Vec<SymbolLink>,
+    backlinks: Backlinks,
+    self_link: SymbolLink,
 }
 
 impl Enum {
@@ -262,10 +292,18 @@ impl Enum {
         file_descriptor: &FileDescriptorProto,
         enum_descriptor: &EnumDescriptorProto,
         path: &[i32],
+        packages: &HashSet<String>,
+        package: String,
         namespace: Vec<String>,
     ) -> Self {
+        let name: String = enum_descriptor.name().into();
+
+        let mut fq = namespace.clone();
+        fq.push(name.clone());
+        let fqsl = format!(".{}.{}", package, fq.join("."));
+
         Self {
-            name: enum_descriptor.name().into(),
+            name,
             meta: read_source_code_info(file_descriptor, path),
             values: enum_descriptor.value.iter().map(|v| {
                 EnumValue {
@@ -275,16 +313,28 @@ impl Enum {
                 }
             }).collect(),
             namespace,
-            backlinks: Vec::new(),
+            backlinks: Default::default(),
+            self_link: SymbolLink::from_fqsl(fqsl, packages),
         }
     }
 
+    #[deprecated]
     fn href_id(&self) -> String {
         if self.namespace.is_empty() {
             self.name.clone()
         } else {
             format!("{}.{}", self.namespace.join("."), self.name)
         }
+    }
+}
+
+impl Linked for Enum {
+    fn symbol_link(&self) -> &SymbolLink {
+        &self.self_link
+    }
+
+    fn set_backlinks(&mut self, backlinks: Backlinks) {
+        self.backlinks = backlinks
     }
 }
 
@@ -319,33 +369,26 @@ impl ProtoFileDescriptorTemplate {
     pub(crate) fn from_descriptor(descriptor: FileDescriptorProto, packages: &HashSet<String>, symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>) -> Self {
         let namespace = vec![];
 
-
         let services = descriptor.service.iter().enumerate().map(|(service_idx, s)| {
             Service {
                 name: s.name().into(),
                 methods: s.method.iter().enumerate().map(|(method_idx, m)| {
                     let method_name: String = m.name().parse().unwrap();
-                    let method_link = SymbolLink::from_type_name(method_name.clone(), packages);
+                    let method_link = SymbolLink::from_fqsl(method_name.clone(), packages);
 
-                    let request_message = SymbolLink::from_type_name(
+                    let request_message = SymbolLink::from_fqsl(
                         m.input_type.clone().unwrap(),
                         packages,
                     );
 
-                    symbol_usages
-                        .entry(request_message.clone())
-                        .or_default()
-                        .push(method_link.clone());
+                    symbol_usages.entry(request_message.clone()).or_default().push(method_link.clone());
 
-                    let response_message = SymbolLink::from_type_name(
+                    let response_message = SymbolLink::from_fqsl(
                         m.output_type.clone().unwrap(),
                         packages,
                     );
 
-                    symbol_usages
-                        .entry(response_message.clone())
-                        .or_default()
-                        .push(method_link);
+                    symbol_usages.entry(response_message.clone()).or_default().push(method_link);
 
                     Method {
                         name: method_name,
@@ -375,7 +418,7 @@ impl ProtoFileDescriptorTemplate {
                 namespace.clone(),
                 packages,
                 descriptor.package().to_string(),
-                symbol_usages
+                symbol_usages,
             )
         }).collect();
 
@@ -384,6 +427,8 @@ impl ProtoFileDescriptorTemplate {
                 &descriptor,
                 e,
                 &[ENUM_TYPE_TAG, enum_idx as i32],
+                packages,
+                descriptor.package().to_string(),
                 namespace.clone(),
             )
         }).collect();
@@ -403,36 +448,33 @@ pub struct ProtoNamespaceTemplate {
     files: Vec<ProtoFileDescriptorTemplate>,
 }
 
-pub(crate) enum Symbol<'a> {
-    Enum(&'a mut Enum),
-    Message(&'a mut ProtoMessage)
-}
-
 impl ProtoNamespaceTemplate {
     pub(crate) fn add_file(&mut self, file: ProtoFileDescriptorTemplate) {
         self.files.push(file);
     }
 
     fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mut mutator: F)
-    where F: Fn(Symbol) + Clone {
+    where
+        F: Fn(&mut dyn Linked) + Clone,
+    {
         for message in messages {
-            mutator(Symbol::Message(message));
+            mutator(message);
             Self::mutate_messages(&mut message.nested_message, mutator.clone());
         }
     }
 
     pub(crate) fn mutate_symbols<F>(&mut self, mut mutator: F)
-        where F: Fn(Symbol) + Clone {
-
+    where
+        F: Fn(&mut dyn Linked) + Clone,
+    {
         for mut file in &mut self.files {
             Self::mutate_messages(&mut file.messages, mutator.clone());
 
-            for mut enumType in &mut file.enums {
-                mutator(Symbol::Enum(&mut enumType))
+            for enum_type in &mut file.enums {
+                mutator(enum_type)
             }
         }
-
-        }
+    }
 }
 
 // these tags come from FileDescriptorProto - prost doesn't provide a way to read this as-yet
