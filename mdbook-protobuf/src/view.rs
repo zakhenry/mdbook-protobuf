@@ -1,89 +1,12 @@
-use prost_types::field_descriptor_proto::Type;
+use crate::links::{Backlinks, Linked, SymbolLink};
 use askama::Template;
+use prost_types::field_descriptor_proto::Type;
 use prost_types::source_code_info::Location;
-use prost_types::{DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto};
+use prost_types::{
+    DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+    OneofDescriptorProto,
+};
 use std::collections::{HashMap, HashSet};
-
-pub(crate) trait Linked {
-    fn symbol_link(&self) -> &SymbolLink;
-    fn fqsl(&self) -> String {
-        self.symbol_link().fqsl()
-    }
-
-    fn set_backlinks(&mut self, backlinks: Backlinks);
-}
-
-#[derive(Template, Default)]
-#[template(path = "backlinks.html")]
-pub(crate) struct Backlinks {
-    links: Vec<SymbolLink>
-}
-
-impl Backlinks {
-    pub(crate) fn new(links: Vec<SymbolLink>) -> Self { Self { links } }
-}
-
-#[derive(Template, Clone, Eq, Hash, PartialEq)]
-#[template(path = "symbol_link.html")]
-pub(crate) struct SymbolLink {
-    symbol: String,
-    path: String,
-    property: Option<String>,
-}
-
-impl SymbolLink {
-    // @todo refactor me, this function is a mess but write some tests first!
-    fn from_fqsl(fqsl: String, packages: &HashSet<String>) -> Self {
-
-        let (fqsl_no_prop, property) = if let Some((fqsl_no_prop, property)) = fqsl.split_once("::") {
-            (fqsl_no_prop.to_string(), Some(property.to_string()))
-        } else {
-            (fqsl.clone(), None)
-        };
-
-        let best_match = packages.iter().filter(|value| fqsl_no_prop[1..].starts_with(value.as_str())).max_by_key(|value| value.len());
-
-        if let Some(path) = best_match {
-            Self {
-                symbol: fqsl_no_prop[1..].replace(&format!("{}.", path), ""),
-                path: path.to_string().replace(".", "/"),
-                property,
-            }
-        } else {
-            Self {
-                symbol: fqsl_no_prop[1..].to_string(),
-                path: "".into(),
-                property,
-            }
-        }
-    }
-
-
-    fn id(&self) -> String {
-        if let Some(property) = &self.property {
-            format!("{}::{}", self.symbol, property)
-        } else {
-            self.symbol.to_string()
-        }
-    }
-
-    fn fqsl(&self) -> String {
-        format!(".{}.{}", self.path, self.id())
-    }
-
-    fn label(&self) -> String {
-        let fqsl = self.fqsl();
-        if let Some(index) = fqsl.rfind('.') {
-            fqsl[index + 1..].to_string()
-        } else {
-            fqsl
-        }
-    }
-
-    fn href(&self) -> String {
-        format!("/proto/{}.md#{}", self.path, self.id())
-    }
-}
 
 pub(crate) enum FieldType {
     Symbol(SymbolLink),
@@ -100,7 +23,7 @@ struct SimpleField {
     optional: bool,
     oneof_index: Option<i32>,
     deprecated: bool,
-    self_link: SymbolLink
+    self_link: SymbolLink,
 }
 
 impl SimpleField {
@@ -109,12 +32,11 @@ impl SimpleField {
         field_descriptor: &FieldDescriptorProto,
         path: &[i32],
         packages: &HashSet<String>,
-        parent_symbol: &SymbolLink
+        parent_symbol: &SymbolLink,
     ) -> Self {
-
         let name: String = field_descriptor.name().into();
         let mut self_link = parent_symbol.clone();
-        self_link.property = Some(name.clone());
+        self_link.set_property(name.clone());
 
         Self {
             name,
@@ -133,8 +55,11 @@ impl SimpleField {
             },
             optional: field_descriptor.proto3_optional.unwrap_or(false),
             oneof_index: field_descriptor.oneof_index,
-            deprecated: field_descriptor.clone().options.map_or(false, |o| o.deprecated()),
-            self_link
+            deprecated: field_descriptor
+                .clone()
+                .options
+                .map_or(false, |o| o.deprecated()),
+            self_link,
         }
     }
 }
@@ -185,43 +110,69 @@ impl ProtoMessage {
         file_descriptor: &FileDescriptorProto,
         message_descriptor: &DescriptorProto,
         source_path: &[i32],
-        namespace_path: Vec<String>,
+        parent_messages: Vec<String>,
         packages: &HashSet<String>,
         package: String,
         symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>,
     ) -> Self {
         let name: String = message_descriptor.name().into();
-        let mut nested_namespace = namespace_path.clone();
-        nested_namespace.push(message_descriptor.name().into());
+        let mut message_path = parent_messages.clone();
+        message_path.push(message_descriptor.name().into());
 
-        let fqsl = format!(".{}.{}", package, nested_namespace.join("."));
+        let fqsl = format!(".{}.{}", package, message_path.join("."));
         let self_link = SymbolLink::from_fqsl(fqsl, packages);
 
-        let all_fields: Vec<SimpleField> = message_descriptor.field.iter().enumerate().map(|(idx, f)| {
-            let mut nested_path = source_path.to_vec();
-            nested_path.extend(&[MESSAGE_FIELD_TAG, idx as i32]);
+        let all_fields: Vec<SimpleField> = message_descriptor
+            .field
+            .iter()
+            .enumerate()
+            .map(|(idx, f)| {
+                let mut nested_path = source_path.to_vec();
+                nested_path.extend(&[MESSAGE_FIELD_TAG, idx as i32]);
 
-            SimpleField::from_descriptor(file_descriptor, f, nested_path.as_ref(), packages, &self_link)
-        }).collect();
+                SimpleField::from_descriptor(
+                    file_descriptor,
+                    f,
+                    nested_path.as_ref(),
+                    packages,
+                    &self_link,
+                )
+            })
+            .collect();
 
-        let mut oneofs: HashMap<i32, OneOfField> = message_descriptor.oneof_decl.iter().enumerate().map(|(idx, o)| {
-            let mut nested_path = source_path.to_vec();
-            nested_path.extend(&[MESSAGE_ONEOF_TAG, idx as i32]);
-            (idx as i32, OneOfField::from_descriptor(file_descriptor, o, nested_path.as_ref()))
-        }).collect();
+        let mut oneofs: HashMap<i32, OneOfField> = message_descriptor
+            .oneof_decl
+            .iter()
+            .enumerate()
+            .map(|(idx, o)| {
+                let mut nested_path = source_path.to_vec();
+                nested_path.extend(&[MESSAGE_ONEOF_TAG, idx as i32]);
+                (
+                    idx as i32,
+                    OneOfField::from_descriptor(file_descriptor, o, nested_path.as_ref()),
+                )
+            })
+            .collect();
 
         let mut fields = Vec::new();
 
         for field in all_fields {
             if let FieldType::Symbol(symbol_link) = &field.typ {
                 let mut field_ref = self_link.clone();
-                field_ref.property = Some(field.name.clone());
+                field_ref.set_property(field.name.clone());
 
-                symbol_usages.entry(symbol_link.clone()).or_default().push(field_ref.clone());
+                symbol_usages
+                    .entry(symbol_link.clone())
+                    .or_default()
+                    .push(field_ref.clone());
             }
 
             if let Some(oneof_index) = field.oneof_index {
-                oneofs.get_mut(&oneof_index).expect("field should exist").fields.push(field)
+                oneofs
+                    .get_mut(&oneof_index)
+                    .expect("field should exist")
+                    .fields
+                    .push(field)
             } else {
                 fields.push(Field::Simple(field));
             }
@@ -232,35 +183,48 @@ impl ProtoMessage {
         Self {
             name,
             self_link,
-            namespace: namespace_path,
+            namespace: parent_messages,
             meta: read_source_code_info(file_descriptor, source_path),
-            nested_message: message_descriptor.nested_type.iter().enumerate().map(|(idx, m)| {
-                let mut nested_path = source_path.to_vec();
-                nested_path.extend(&[idx as i32]);
-                ProtoMessage::from_descriptor(
-                    file_descriptor,
-                    m,
-                    nested_path.as_ref(),
-                    nested_namespace.clone(),
-                    packages,
-                    package.clone(),
-                    symbol_usages,
-                )
-            }).collect(),
-            nested_enum: message_descriptor.enum_type.iter().enumerate().map(|(idx, m)| {
-                let mut nested_path = source_path.to_vec();
-                nested_path.extend(&[idx as i32]);
-                Enum::from_descriptor(
-                    file_descriptor,
-                    m,
-                    nested_path.as_ref(),
-                    packages,
-                    package.clone(),
-                    nested_namespace.clone(),
-                )
-            }).collect(),
+            nested_message: message_descriptor
+                .nested_type
+                .iter()
+                .enumerate()
+                .map(|(idx, m)| {
+                    let mut nested_path = source_path.to_vec();
+                    nested_path.extend(&[idx as i32]);
+                    ProtoMessage::from_descriptor(
+                        file_descriptor,
+                        m,
+                        nested_path.as_ref(),
+                        message_path.clone(),
+                        packages,
+                        package.clone(),
+                        symbol_usages,
+                    )
+                })
+                .collect(),
+            nested_enum: message_descriptor
+                .enum_type
+                .iter()
+                .enumerate()
+                .map(|(idx, m)| {
+                    let mut nested_path = source_path.to_vec();
+                    nested_path.extend(&[idx as i32]);
+                    Enum::from_descriptor(
+                        file_descriptor,
+                        m,
+                        nested_path.as_ref(),
+                        packages,
+                        package.clone(),
+                        message_path.clone(),
+                    )
+                })
+                .collect(),
             fields,
-            deprecated: message_descriptor.options.clone().map_or(false, |o| o.deprecated()),
+            deprecated: message_descriptor
+                .options
+                .clone()
+                .map_or(false, |o| o.deprecated()),
             backlinks: Default::default(),
         }
     }
@@ -311,13 +275,15 @@ impl Enum {
         Self {
             name,
             meta: read_source_code_info(file_descriptor, path),
-            values: enum_descriptor.value.iter().map(|v| {
-                EnumValue {
+            values: enum_descriptor
+                .value
+                .iter()
+                .map(|v| EnumValue {
                     name: v.name().to_string(),
                     tag: v.number(),
                     deprecated: v.clone().options.map_or(false, |o| o.deprecated()),
-                }
-            }).collect(),
+                })
+                .collect(),
             namespace,
             backlinks: Default::default(),
             self_link: SymbolLink::from_fqsl(fqsl, packages),
@@ -343,6 +309,7 @@ struct Method {
     response_message: SymbolLink,
     meta: Option<Location>,
     deprecated: bool,
+    self_link: SymbolLink,
 }
 
 #[derive(Template)]
@@ -363,72 +330,109 @@ pub struct ProtoFileDescriptorTemplate {
 }
 
 impl ProtoFileDescriptorTemplate {
-    pub(crate) fn from_descriptor(descriptor: FileDescriptorProto, packages: &HashSet<String>, symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>) -> Self {
-        let namespace = vec![];
+    pub(crate) fn from_descriptor(
+        descriptor: FileDescriptorProto,
+        packages: &HashSet<String>,
+        symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>,
+    ) -> Self {
+        let parent_messages = vec![];
 
-        let services = descriptor.service.iter().enumerate().map(|(service_idx, s)| {
-            Service {
-                name: s.name().into(),
-                methods: s.method.iter().enumerate().map(|(method_idx, m)| {
-                    let method_name: String = m.name().parse().unwrap();
-                    let method_link = SymbolLink::from_fqsl(method_name.clone(), packages);
+        let services = descriptor
+            .service
+            .iter()
+            .enumerate()
+            .map(|(service_idx, s)| {
+                let service_name: String = s.name().into();
+                Service {
+                    name: service_name.clone(),
+                    methods: s
+                        .method
+                        .iter()
+                        .enumerate()
+                        .map(|(method_idx, m)| {
+                            let method_name: String = m.name().parse().unwrap();
 
-                    let request_message = SymbolLink::from_fqsl(
-                        m.input_type.clone().unwrap(),
-                        packages,
-                    );
+                            let method_link = SymbolLink::from_fqsl(
+                                format!(
+                                    ".{}.{}::{}",
+                                    descriptor.package(),
+                                    &service_name,
+                                    &method_name
+                                ),
+                                packages,
+                            );
 
-                    symbol_usages.entry(request_message.clone()).or_default().push(method_link.clone());
+                            let request_message =
+                                SymbolLink::from_fqsl(m.input_type.clone().unwrap(), packages);
 
-                    let response_message = SymbolLink::from_fqsl(
-                        m.output_type.clone().unwrap(),
-                        packages,
-                    );
+                            symbol_usages
+                                .entry(request_message.clone())
+                                .or_default()
+                                .push(method_link.clone());
 
-                    symbol_usages.entry(response_message.clone()).or_default().push(method_link);
+                            let response_message =
+                                SymbolLink::from_fqsl(m.output_type.clone().unwrap(), packages);
 
-                    Method {
-                        name: method_name,
-                        request_message,
-                        response_message,
-                        meta: read_source_code_info(
-                            &descriptor,
-                            &[
-                                SERVICE_TAG,
-                                service_idx as i32,
-                                SERVICE_METHOD_TAG,
-                                method_idx as i32,
-                            ],
-                        ),
-                        deprecated: m.options.clone().map_or(false, |o| o.deprecated()),
-                    }
-                }).collect(),
-                meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
-            }
-        }).collect();
+                            symbol_usages
+                                .entry(response_message.clone())
+                                .or_default()
+                                .push(method_link.clone());
 
-        let messages = descriptor.message_type.iter().enumerate().map(|(message_idx, m)| {
-            ProtoMessage::from_descriptor(
-                &descriptor,
-                m,
-                &[MESSAGE_TYPE_TAG, message_idx as i32],
-                namespace.clone(),
-                packages,
-                descriptor.package().to_string(),
-                symbol_usages,
-            )
-        }).collect();
+                            Method {
+                                name: method_name,
+                                request_message,
+                                response_message,
+                                self_link: method_link,
+                                meta: read_source_code_info(
+                                    &descriptor,
+                                    &[
+                                        SERVICE_TAG,
+                                        service_idx as i32,
+                                        SERVICE_METHOD_TAG,
+                                        method_idx as i32,
+                                    ],
+                                ),
+                                deprecated: m.options.clone().map_or(false, |o| o.deprecated()),
+                            }
+                        })
+                        .collect(),
+                    meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
+                }
+            })
+            .collect();
 
-        let enums = descriptor.enum_type.iter().enumerate().map(|(enum_idx, e)| {
-            Enum::from_descriptor(
-                &descriptor,
-                e,
-                &[ENUM_TYPE_TAG, enum_idx as i32],
-                packages,
-                descriptor.package().to_string(),
-                namespace.clone(),
-            )
-        }).collect();
+        let messages = descriptor
+            .message_type
+            .iter()
+            .enumerate()
+            .map(|(message_idx, m)| {
+                ProtoMessage::from_descriptor(
+                    &descriptor,
+                    m,
+                    &[MESSAGE_TYPE_TAG, message_idx as i32],
+                    parent_messages.clone(),
+                    packages,
+                    descriptor.package().to_string(),
+                    symbol_usages,
+                )
+            })
+            .collect();
+
+        let enums = descriptor
+            .enum_type
+            .iter()
+            .enumerate()
+            .map(|(enum_idx, e)| {
+                Enum::from_descriptor(
+                    &descriptor,
+                    e,
+                    &[ENUM_TYPE_TAG, enum_idx as i32],
+                    packages,
+                    descriptor.package().to_string(),
+                    parent_messages.clone(),
+                )
+            })
+            .collect();
 
         Self {
             services,
@@ -450,7 +454,7 @@ impl ProtoNamespaceTemplate {
         self.files.push(file);
     }
 
-    fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mut mutator: F)
+    pub(crate) fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mut mutator: F)
     where
         F: Fn(&mut dyn Linked) + Clone,
     {
@@ -485,7 +489,10 @@ const SERVICE_TAG: i32 = 6;
 
 fn read_source_code_info(descriptor: &FileDescriptorProto, path: &[i32]) -> Option<Location> {
     if let Some(info) = &descriptor.source_code_info {
-        info.location.iter().find(|location| location.path == path).cloned()
+        info.location
+            .iter()
+            .find(|location| location.path == path)
+            .cloned()
     } else {
         None
     }

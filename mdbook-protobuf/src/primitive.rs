@@ -1,6 +1,6 @@
+use crate::view::FieldType;
 use askama::Template;
 use prost_types::field_descriptor_proto::Type;
-use crate::view::FieldType;
 
 #[derive(Template)]
 #[template(path = "primitive.html")]
