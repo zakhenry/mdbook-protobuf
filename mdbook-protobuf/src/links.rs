@@ -21,12 +21,32 @@ pub(crate) trait Linked {
 #[derive(Template, Default)]
 #[template(path = "backlinks.html")]
 pub(crate) struct Backlinks {
-    links: Vec<SymbolLink>,
+    links: Vec<Backlink>,
 }
 
 impl Backlinks {
-    pub(crate) fn new(links: Vec<SymbolLink>) -> Self {
+    pub(crate) fn new(links: Vec<Backlink>) -> Self {
         Self { links }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) enum Backlink {
+    Content(ContentLink),
+    Symbol(SymbolLink),
+}
+
+#[derive(Template, Clone)]
+#[template(path = "content_link.html")]
+pub(crate) struct ContentLink {
+    path: String,
+    id: String,
+    label: String,
+}
+
+impl ContentLink {
+    fn href(&self) -> String {
+        format!("/{}#{}", self.path, self.id)
     }
 }
 
@@ -36,7 +56,8 @@ pub(crate) struct SymbolLink {
     symbol: String,
     path: String,
     property: Option<String>,
-    label_override: Option<String>
+    label_override: Option<String>,
+    own_id: Option<String>,
 }
 
 impl SymbolLink {
@@ -63,6 +84,7 @@ impl SymbolLink {
                 path: path.to_string().replace(".", "/"),
                 property,
                 label_override: None,
+                own_id: None,
             }
         } else {
             Self {
@@ -70,6 +92,7 @@ impl SymbolLink {
                 path: "".into(),
                 property,
                 label_override: None,
+                own_id: None,
             }
         }
     }
@@ -88,7 +111,7 @@ impl SymbolLink {
 
     fn label(&self) -> String {
         if let Some(label) = &self.label_override {
-            return label.clone()
+            return label.clone();
         }
         let fqsl = self.fqsl();
         if let Some(index) = fqsl.rfind('.') {
@@ -105,11 +128,15 @@ impl SymbolLink {
     fn href(&self) -> String {
         format!("/proto/{}.md#{}", self.path, self.id())
     }
+
+    pub(crate) fn set_own_id(&mut self, id: String) {
+        self.own_id = Some(id)
+    }
 }
 
 pub fn assign_backlinks(
     document: &mut BTreeMap<String, ProtoNamespaceTemplate>,
-    symbol_usages: HashMap<SymbolLink, Vec<SymbolLink>>,
+    symbol_usages: HashMap<SymbolLink, Vec<Backlink>>,
 ) {
     for (_, namespace) in document {
         namespace.mutate_symbols(|symbol| {
@@ -122,17 +149,19 @@ pub fn assign_backlinks(
 
 pub fn link_proto_symbols(
     chapter: &mut Chapter,
-    links: &[SymbolLink],
-    symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>,
+    symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
 ) -> Result<()> {
     let matcher = SkimMatcherV2::default();
+
+    let mut chapter_link_id = 1;
+
+    let links: Vec<_> = symbol_usages.keys().cloned().collect();
 
     // @todo assign symbol usages. maybe discriminate type with enum so they can be rendered differently.
 
     let re = Regex::new(r"proto!\((.*)\)").expect("should be valid regex");
 
     let mut buf = String::with_capacity(chapter.content.len());
-
 
     let mut current_link: Option<SymbolLink> = None;
 
@@ -200,6 +229,26 @@ pub fn link_proto_symbols(
                     }
                 }.clone();
 
+                // don't backlink to draft chapters
+                if let Some(path) = &chapter.path {
+
+                    let current_usages_of_symbol = symbol_usages
+                        .entry(symbol_link.clone())
+                        .or_default();
+
+                    let usage_id = chapter_link_id;
+
+                    let id = format!("{}{}",&usage_id, symbol_link.fqsl());
+
+                    symbol_link.set_own_id(id.clone());
+
+                    let label = format!("{}[{}]", chapter.name, &usage_id);
+
+                    let content_link = ContentLink { id, path: path.to_str().unwrap().to_string(), label};
+
+                    current_usages_of_symbol.push(Backlink::Content(content_link))
+                }
+
                 current_link = Some(symbol_link);
 
                 None
@@ -221,6 +270,7 @@ pub fn link_proto_symbols(
                 };
 
                 current_link = None;
+                chapter_link_id += 1;
 
                 Some(result)
             }
@@ -266,16 +316,16 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
         let original_content = chapter.content.clone();
 
-        link_proto_symbols(&mut chapter, &[], &mut Default::default()).expect("should succeed");
+        link_proto_symbols(&mut chapter, &mut Default::default()).expect("should succeed");
 
         assert_eq!(chapter.content.trim(), original_content.trim())
     }
 
     #[test]
     fn should_replace_proto_links_with_symbol_link() {
-        let links = vec![SymbolLink::from_fqsl(
-            ".hello.HelloWorld".into(),
-            &HashSet::from(["hello".into()]),
+        let links = [(
+            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &HashSet::from(["hello".into()])),
+            Default::default(),
         )];
 
         let mut chapter = Chapter {
@@ -294,7 +344,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
             parent_names: vec![],
         };
 
-        link_proto_symbols(&mut chapter, &links, &mut Default::default()).expect("should succeed");
+        link_proto_symbols(&mut chapter, &mut HashMap::from(links)).expect("should succeed");
 
         assert_eq!(
             chapter.content.trim(),
@@ -312,10 +362,19 @@ Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
     fn should_error_and_offer_solutions_in_the_result_when_too_many_symbols_match() {
         let packages = HashSet::from(["hello".into(), "other".into()]);
 
-        let links = vec![
-            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
-            SymbolLink::from_fqsl(".other.HelloWorld".into(), &packages),
-            SymbolLink::from_fqsl(".other.Unrelated".into(), &packages),
+        let links = [
+            (
+                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+                Default::default(),
+            ),
+            (
+                SymbolLink::from_fqsl(".other.HelloWorld".into(), &packages),
+                Default::default(),
+            ),
+            (
+                SymbolLink::from_fqsl(".other.Unrelated".into(), &packages),
+                Default::default(),
+            ),
         ];
 
         let mut chapter = Chapter {
@@ -334,7 +393,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
             parent_names: vec![],
         };
 
-        let res = link_proto_symbols(&mut chapter, &links, &mut Default::default());
+        let res = link_proto_symbols(&mut chapter, &mut HashMap::from(links));
 
         assert_eq!(
             res.unwrap_err().to_string(),
@@ -348,9 +407,15 @@ proto!(.other.HelloWorld)"#
     fn should_error_and_offer_solutions_in_the_result_when_zero_symbols_match() {
         let packages = HashSet::from(["hello".into(), "other".into()]);
 
-        let links = vec![
-            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
-            SymbolLink::from_fqsl(".hello.GoodbyeWorld".into(), &packages),
+        let links = [
+            (
+                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+                Default::default(),
+            ),
+            (
+                SymbolLink::from_fqsl(".hello.GoodbyeWorld".into(), &packages),
+                Default::default(),
+            ),
         ];
 
         let mut chapter = Chapter {
@@ -369,7 +434,7 @@ Lorem ipsum [proto link](proto!(HelloWord))
             parent_names: vec![],
         };
 
-        let res = link_proto_symbols(&mut chapter, &links, &mut Default::default());
+        let res = link_proto_symbols(&mut chapter, &mut HashMap::from(links));
 
         assert_eq!(
             res.unwrap_err().to_string(),
@@ -378,13 +443,18 @@ proto!(.hello.HelloWorld)"#
         )
     }
 
-
     #[test]
     fn should_link_to_parent_of_nested_message() {
         let packages = HashSet::from(["hello".into()]);
-        let links = vec![
-            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
-            SymbolLink::from_fqsl(".hello.HelloWorld.Nested".into(), &packages),
+        let links = [
+            (
+                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+                Default::default(),
+            ),
+            (
+                SymbolLink::from_fqsl(".hello.HelloWorld.Nested".into(), &packages),
+                Default::default(),
+            ),
         ];
 
         let mut chapter = Chapter {
@@ -395,7 +465,7 @@ proto!(.hello.HelloWorld)"#
 Lorem ipsum [proto link](proto!(HelloWorld))
 
 "#
-                .to_string(),
+            .to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -403,7 +473,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
             parent_names: vec![],
         };
 
-        link_proto_symbols(&mut chapter, &links, &mut Default::default()).expect("should succeed");
+        link_proto_symbols(&mut chapter, &mut HashMap::from(links)).expect("should succeed");
 
         assert_eq!(
             chapter.content.trim(),
@@ -413,7 +483,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
 Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
 "#
-                .trim()
+            .trim()
         )
     }
 }

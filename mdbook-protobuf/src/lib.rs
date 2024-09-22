@@ -106,7 +106,7 @@ impl Preprocessor for ProtobufPreprocessor {
 
         let mut namespaces: BTreeMap<String, ProtoNamespaceTemplate> = BTreeMap::new();
 
-        let mut symbol_usages: HashMap<SymbolLink, Vec<SymbolLink>> = HashMap::new();
+        let mut symbol_usages: HashMap<SymbolLink, Vec<links::Backlink>> = HashMap::new();
 
         let packages: HashSet<String> = file_descriptor_set
             .file
@@ -128,8 +128,7 @@ impl Preprocessor for ProtobufPreprocessor {
 
         for book_item in &mut book.sections {
             if let BookItem::Chapter(chapter) = book_item {
-                let keys: Vec<_> = symbol_usages.keys().cloned().collect();
-                links::link_proto_symbols(chapter, &keys, &mut symbol_usages)?;
+                links::link_proto_symbols(chapter, &mut symbol_usages)?;
             }
         }
 

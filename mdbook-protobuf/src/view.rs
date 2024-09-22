@@ -1,4 +1,4 @@
-use crate::links::{Backlinks, Linked, SymbolLink};
+use crate::links::{Backlink, Backlinks, Linked, SymbolLink};
 use askama::Template;
 use prost_types::field_descriptor_proto::Type;
 use prost_types::source_code_info::Location;
@@ -113,7 +113,7 @@ impl ProtoMessage {
         parent_messages: Vec<String>,
         packages: &HashSet<String>,
         package: String,
-        symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>,
+        symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
     ) -> Self {
         let name: String = message_descriptor.name().into();
         let mut message_path = parent_messages.clone();
@@ -164,7 +164,7 @@ impl ProtoMessage {
                 symbol_usages
                     .entry(symbol_link.clone())
                     .or_default()
-                    .push(field_ref.clone());
+                    .push(Backlink::Symbol(field_ref.clone()));
             }
 
             if let Some(oneof_index) = field.oneof_index {
@@ -334,7 +334,7 @@ impl ProtoFileDescriptorTemplate {
     pub(crate) fn from_descriptor(
         descriptor: FileDescriptorProto,
         packages: &HashSet<String>,
-        symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>,
+        symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
     ) -> Self {
         let parent_messages = vec![];
 
@@ -346,11 +346,7 @@ impl ProtoFileDescriptorTemplate {
                 let service_name: String = s.name().into();
 
                 let service_link = SymbolLink::from_fqsl(
-                    format!(
-                        ".{}.{}",
-                        descriptor.package(),
-                        &service_name,
-                    ),
+                    format!(".{}.{}", descriptor.package(), &service_name,),
                     packages,
                 );
 
@@ -374,7 +370,7 @@ impl ProtoFileDescriptorTemplate {
                             symbol_usages
                                 .entry(request_message.clone())
                                 .or_default()
-                                .push(method_link.clone());
+                                .push(Backlink::Symbol(method_link.clone()));
 
                             let response_message =
                                 SymbolLink::from_fqsl(m.output_type.clone().unwrap(), packages);
@@ -382,7 +378,7 @@ impl ProtoFileDescriptorTemplate {
                             symbol_usages
                                 .entry(response_message.clone())
                                 .or_default()
-                                .push(method_link.clone());
+                                .push(Backlink::Symbol(method_link.clone()));
 
                             Method {
                                 name: method_name,

@@ -1,1 +1,6 @@
+{% if let Some(oid) = own_id %}
+<a href="{{Self::href(self)}}" id="{{oid}}">{{Self::label(self)}}</a>
+{% else %}
 <a href="{{Self::href(self)}}">{{Self::label(self)}}</a>
+{% endif %}
+

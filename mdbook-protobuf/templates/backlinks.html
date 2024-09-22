@@ -3,7 +3,12 @@
     <label>backlinks</label>
     <ul>
         {% for link in links %}
-        <li>{{ link|safe }}</li>
+        {% match link %}
+        {% when Backlink::Content with (content_link) %}
+        <li>{{ content_link|safe }}</li>
+        {% when Backlink::Symbol with (symbol_link) %}
+        <li>{{ symbol_link|safe }}</li>
+        {% endmatch %}
         {% endfor %}
     </ul>
 </fieldset>
