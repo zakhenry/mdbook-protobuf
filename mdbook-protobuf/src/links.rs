@@ -1,6 +1,11 @@
 use crate::view::ProtoNamespaceTemplate;
 use askama::Template;
+use mdbook::book::Chapter;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use anyhow::{anyhow, Error, Result};
+use pulldown_cmark::{CowStr, Event, Parser, Tag, TagEnd};
+use pulldown_cmark_to_cmark::cmark;
+use regex::Regex;
 
 pub(crate) trait Linked {
     fn symbol_link(&self) -> &SymbolLink;
@@ -101,4 +106,128 @@ pub fn assign_backlinks(
             }
         })
     }
+}
+
+pub fn link_proto_symbols<'a, T>(chapter: &mut Chapter, links: &T) -> Result<()>
+    where T: Iterator<Item=&'a SymbolLink> + Clone
+{
+
+
+    let re = Regex::new(r"proto!\((.*)\)").expect("should be valid regex");
+
+    let mut buf = String::with_capacity(chapter.content.len());
+
+    let events = Parser::new(&chapter.content).map(|e| {
+
+        match e {
+            Event::Start(Tag::Link {link_type,
+                             dest_url,
+                             title,
+                             id}) if re.is_match(&dest_url) => {
+
+                // let mut modified = e
+
+                let Some(caps) = re.captures(&dest_url) else {
+                    panic!("match with no capture!");
+                };
+
+                let link_query = &caps[1];
+
+                let matches: Vec<_> = links.clone().filter(|&s| {
+                    dbg!(&s.fqsl());
+                    s.fqsl().contains(link_query)
+                }).collect();
+
+                let symbol_link = match matches.len() {
+                    0 => {
+                        panic!("No matches") // @todo show nearest match and offer it as a solution
+                    }
+                    1 => &matches[0],
+                    _ => {
+                        panic!("Too many matches") // @todo show nearest match and offer it as a solution
+                    }
+                };
+
+                let new_dest = CowStr::Boxed(symbol_link.href().into());
+
+                Event::Start(Tag::Link { link_type, dest_url: new_dest, title, id})
+            }
+            _ => e
+        }
+
+    });
+
+    chapter.content = cmark(events, &mut buf).map(|_| buf).map_err(|err| {
+        anyhow::Error::from(err)
+    })?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::{HashMap, HashSet};
+    use mdbook::book::Chapter;
+    use crate::links::{link_proto_symbols, SymbolLink};
+
+    #[test]
+    fn should_preserve_normal_links() {
+
+
+        let mut chapter = Chapter {
+            name: "".to_string(),
+            content: r#"
+# test chapter
+
+Lorem ipsum [footnote link][1] [external link](https://example.com)
+
+[1]: https://example.com
+
+            "#.to_string(),
+            number: None,
+            sub_items: vec![],
+            path: None,
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        let original_content = chapter.content.clone();
+
+        link_proto_symbols(&mut chapter, &[].into_iter()).expect("should succeed");
+
+        assert_eq!(chapter.content.trim(), original_content.trim())
+    }
+
+    #[test]
+    fn should_replace_proto_links_with_symbol_link() {
+
+        let links = vec![SymbolLink::from_fqsl(".hello.HelloWorld".into(), &HashSet::from(["hello".into()]))];
+
+        let mut chapter = Chapter {
+            name: "".to_string(),
+            content: r#"
+# test chapter
+
+Lorem ipsum [proto link](proto!(HelloWorld))
+
+"#.to_string(),
+            number: None,
+            sub_items: vec![],
+            path: None,
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        link_proto_symbols(&mut chapter, &links.iter()).expect("should succeed");
+
+
+        assert_eq!(chapter.content.trim(), r#"
+# test chapter
+
+Lorem ipsum [proto link](/proto/hello.md#HelloWorld)
+
+"#.trim())
+
+    }
+
 }

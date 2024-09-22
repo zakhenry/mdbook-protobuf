@@ -361,6 +361,7 @@ impl ProtoFileDescriptorTemplate {
                                 ),
                                 packages,
                             );
+                            symbol_usages.entry(method_link.clone()).or_default();
 
                             let request_message =
                                 SymbolLink::from_fqsl(m.input_type.clone().unwrap(), packages);

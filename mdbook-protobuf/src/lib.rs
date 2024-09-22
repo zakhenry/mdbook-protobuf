@@ -126,7 +126,14 @@ impl Preprocessor for ProtobufPreprocessor {
             ));
         }
 
+        for book_item in &mut book.sections {
+            if let BookItem::Chapter(chapter) = book_item {
+                links::link_proto_symbols(chapter, &symbol_usages.keys())?;
+            }
+        }
+
         links::assign_backlinks(&mut namespaces, symbol_usages);
+
 
         // @todo support searching sub chapters
         let target_chapter = if let Some(nest_under) = args.nest_under {
