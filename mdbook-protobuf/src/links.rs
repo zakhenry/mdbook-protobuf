@@ -1,11 +1,13 @@
 use crate::view::ProtoNamespaceTemplate;
-use askama::Template;
-use mdbook::book::Chapter;
-use std::collections::{BTreeMap, HashMap, HashSet};
 use anyhow::{anyhow, Error, Result};
+use askama::Template;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+use mdbook::book::Chapter;
 use pulldown_cmark::{CowStr, Event, Parser, Tag, TagEnd};
 use pulldown_cmark_to_cmark::cmark;
 use regex::Regex;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(crate) trait Linked {
     fn symbol_link(&self) -> &SymbolLink;
@@ -108,16 +110,20 @@ pub fn assign_backlinks(
     }
 }
 
-pub fn link_proto_symbols<'a, T>(chapter: &mut Chapter, links: &T) -> Result<()>
-    where T: Iterator<Item=&'a SymbolLink> + Clone
-{
+pub fn link_proto_symbols(
+    chapter: &mut Chapter,
+    links: &[SymbolLink],
+    symbol_usages: &mut HashMap<SymbolLink, Vec<SymbolLink>>,
+) -> Result<()> {
+    let matcher = SkimMatcherV2::default();
 
+    // @todo assign symbol usages. maybe discriminate type with enum so they can be rendered differently.
 
     let re = Regex::new(r"proto!\((.*)\)").expect("should be valid regex");
 
     let mut buf = String::with_capacity(chapter.content.len());
 
-    let events = Parser::new(&chapter.content).map(|e| {
+    let events: Result<Vec<Event>> = Parser::new(&chapter.content).map(|e| {
 
         match e {
             Event::Start(Tag::Link {link_type,
@@ -125,55 +131,90 @@ pub fn link_proto_symbols<'a, T>(chapter: &mut Chapter, links: &T) -> Result<()>
                              title,
                              id}) if re.is_match(&dest_url) => {
 
-                // let mut modified = e
-
                 let Some(caps) = re.captures(&dest_url) else {
                     panic!("match with no capture!");
                 };
 
                 let link_query = &caps[1];
 
-                let matches: Vec<_> = links.clone().filter(|&s| {
-                    dbg!(&s.fqsl());
+                let matches: Vec<_> = links.iter().filter(|&s| {
                     s.fqsl().contains(link_query)
                 }).collect();
 
                 let symbol_link = match matches.len() {
                     0 => {
-                        panic!("No matches") // @todo show nearest match and offer it as a solution
+
+                        let mut scored_links: Vec<_> = links.iter().map(|link|{
+                            let fqsl= link.fqsl();
+
+                            let distance = matcher.fuzzy_match(&fqsl, &link_query).unwrap_or(0);
+
+                            (fqsl, distance)
+                        })
+                            .collect();
+
+                        scored_links.sort_by_key(|(_, distance)|*distance);
+
+                        dbg!(&scored_links);
+
+                        let suggestions: Vec<_> = scored_links
+                            .iter()
+                            .rev()
+                            .filter(|(_, distance)|*distance > 0)
+                            .take(3)
+                            .map(|(fqsl, _)|{
+                            format!("proto!({})", &fqsl)
+                        })
+                            .collect();
+
+                        let err_str = if suggestions.is_empty() {
+                            let random_sample: Vec<_> = scored_links.iter().map(|((fqsl,_))|format!("proto!({})", &fqsl)).take(3).collect();
+                            format!("No protobuf symbol matched your query `{}`, or was similar. Sample of valid formats:\n{}", &link_query, random_sample.join("\n"))
+                        } else {
+                            format!("No protobuf symbol matched your query `{}`, consider one of the following near matches:\n{}", &link_query, suggestions.join("\n"))
+                        };
+
+                        return Err(anyhow!(err_str))
                     }
                     1 => &matches[0],
                     _ => {
-                        panic!("Too many matches") // @todo show nearest match and offer it as a solution
+
+                        let replacements: Vec<_> = matches.iter().map(|&s|{
+                            format!("proto!({})", s.fqsl())
+                        }).collect();
+
+                        let err_str = format!("More than one protobuf symbol matched your query. Replace your link with one of the following:\n{}", replacements.join("\n"));
+
+                        return Err(anyhow!(err_str))
                     }
                 };
 
                 let new_dest = CowStr::Boxed(symbol_link.href().into());
 
-                Event::Start(Tag::Link { link_type, dest_url: new_dest, title, id})
+                Ok::<Event<'_>, Error>(Event::Start(Tag::Link { link_type, dest_url: new_dest, title, id}))
             }
-            _ => e
+            _ => Ok(e)
         }
 
-    });
+    }).collect();
 
-    chapter.content = cmark(events, &mut buf).map(|_| buf).map_err(|err| {
-        anyhow::Error::from(err)
-    })?;
+    let events = events?;
+
+    chapter.content = cmark(events.iter(), &mut buf)
+        .map(|_| buf)
+        .map_err(|err| anyhow::Error::from(err))?;
 
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
-    use std::collections::{HashMap, HashSet};
-    use mdbook::book::Chapter;
     use crate::links::{link_proto_symbols, SymbolLink};
+    use mdbook::book::Chapter;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn should_preserve_normal_links() {
-
-
         let mut chapter = Chapter {
             name: "".to_string(),
             content: r#"
@@ -183,7 +224,8 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
 [1]: https://example.com
 
-            "#.to_string(),
+            "#
+            .to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -193,15 +235,17 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
         let original_content = chapter.content.clone();
 
-        link_proto_symbols(&mut chapter, &[].into_iter()).expect("should succeed");
+        link_proto_symbols(&mut chapter, &[], &mut Default::default()).expect("should succeed");
 
         assert_eq!(chapter.content.trim(), original_content.trim())
     }
 
     #[test]
     fn should_replace_proto_links_with_symbol_link() {
-
-        let links = vec![SymbolLink::from_fqsl(".hello.HelloWorld".into(), &HashSet::from(["hello".into()]))];
+        let links = vec![SymbolLink::from_fqsl(
+            ".hello.HelloWorld".into(),
+            &HashSet::from(["hello".into()]),
+        )];
 
         let mut chapter = Chapter {
             name: "".to_string(),
@@ -210,7 +254,8 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
 Lorem ipsum [proto link](proto!(HelloWorld))
 
-"#.to_string(),
+"#
+            .to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -218,16 +263,87 @@ Lorem ipsum [proto link](proto!(HelloWorld))
             parent_names: vec![],
         };
 
-        link_proto_symbols(&mut chapter, &links.iter()).expect("should succeed");
+        link_proto_symbols(&mut chapter, &links, &mut Default::default()).expect("should succeed");
 
-
-        assert_eq!(chapter.content.trim(), r#"
+        assert_eq!(
+            chapter.content.trim(),
+            r#"
 # test chapter
 
 Lorem ipsum [proto link](/proto/hello.md#HelloWorld)
 
-"#.trim())
-
+"#
+            .trim()
+        )
     }
 
+    #[test]
+    fn should_error_and_offer_solutions_in_the_result_when_too_many_symbols_match() {
+        let packages = HashSet::from(["hello".into(), "other".into()]);
+
+        let links = vec![
+            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+            SymbolLink::from_fqsl(".other.HelloWorld".into(), &packages),
+            SymbolLink::from_fqsl(".other.Unrelated".into(), &packages),
+        ];
+
+        let mut chapter = Chapter {
+            name: "".to_string(),
+            content: r#"
+# test chapter
+
+Lorem ipsum [proto link](proto!(HelloWorld))
+
+"#
+            .to_string(),
+            number: None,
+            sub_items: vec![],
+            path: None,
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        let res = link_proto_symbols(&mut chapter, &links, &mut Default::default());
+
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
+proto!(.hello.HelloWorld)
+proto!(.other.HelloWorld)"#
+        )
+    }
+
+    #[test]
+    fn should_error_and_offer_solutions_in_the_result_when_zero_symbols_match() {
+        let packages = HashSet::from(["hello".into(), "other".into()]);
+
+        let links = vec![
+            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+            SymbolLink::from_fqsl(".hello.GoodbyeWorld".into(), &packages),
+        ];
+
+        let mut chapter = Chapter {
+            name: "".to_string(),
+            content: r#"
+# test chapter
+
+Lorem ipsum [proto link](proto!(HelloWord))
+
+"#
+            .to_string(),
+            number: None,
+            sub_items: vec![],
+            path: None,
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        let res = link_proto_symbols(&mut chapter, &links, &mut Default::default());
+
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            r#"No protobuf symbol matched your query `HelloWord`, consider one of the following near matches:
+proto!(.hello.HelloWorld)"#
+        )
+    }
 }
