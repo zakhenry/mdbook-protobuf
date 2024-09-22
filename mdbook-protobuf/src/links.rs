@@ -36,6 +36,7 @@ pub(crate) struct SymbolLink {
     symbol: String,
     path: String,
     property: Option<String>,
+    label_override: Option<String>
 }
 
 impl SymbolLink {
@@ -61,12 +62,14 @@ impl SymbolLink {
                 symbol: fqsl_no_prop[1..].replace(&format!("{}.", path), ""),
                 path: path.to_string().replace(".", "/"),
                 property,
+                label_override: None,
             }
         } else {
             Self {
                 symbol: fqsl_no_prop[1..].to_string(),
                 path: "".into(),
                 property,
+                label_override: None,
             }
         }
     }
@@ -84,12 +87,19 @@ impl SymbolLink {
     }
 
     fn label(&self) -> String {
+        if let Some(label) = &self.label_override {
+            return label.clone()
+        }
         let fqsl = self.fqsl();
         if let Some(index) = fqsl.rfind('.') {
             fqsl[index + 1..].to_string()
         } else {
             fqsl
         }
+    }
+
+    fn set_label(&mut self, label: String) {
+        self.label_override = Some(label)
     }
 
     fn href(&self) -> String {
@@ -123,7 +133,9 @@ pub fn link_proto_symbols(
 
     let mut buf = String::with_capacity(chapter.content.len());
 
-    let events: Result<Vec<Event>> = Parser::new(&chapter.content).map(|e| {
+    let mut skip_next_endlink = false;
+
+    let events: Result<Vec<Event>> = Parser::new(&chapter.content).flat_map(|e| {
 
         match e {
             Event::Start(Tag::Link {link_type,
@@ -141,7 +153,7 @@ pub fn link_proto_symbols(
                     s.fqsl().ends_with(link_query)
                 }).collect();
 
-                let symbol_link = match matches.len() {
+                let mut symbol_link = match matches.len() {
                     0 => {
 
                         let mut scored_links: Vec<_> = links.iter().map(|link|{
@@ -174,9 +186,9 @@ pub fn link_proto_symbols(
                             format!("No protobuf symbol matched your query `{}`, consider one of the following near matches:\n{}", &link_query, suggestions.join("\n"))
                         };
 
-                        return Err(anyhow!(err_str))
+                        return vec![Err(anyhow!(err_str))]
                     }
-                    1 => &matches[0],
+                    1 => matches[0],
                     _ => {
 
                         let replacements: Vec<_> = matches.iter().map(|&s|{
@@ -185,22 +197,43 @@ pub fn link_proto_symbols(
 
                         let err_str = format!("More than one protobuf symbol matched your query. Replace your link with one of the following:\n{}", replacements.join("\n"));
 
-                        return Err(anyhow!(err_str))
+                        return vec![Err(anyhow!(err_str))]
                     }
-                };
+                }.clone();
 
-                let new_dest = CowStr::Boxed(symbol_link.href().into());
+                symbol_link.set_label("foo".into());
+                // todo!()
 
-                Ok::<Event<'_>, Error>(Event::Start(Tag::Link { link_type, dest_url: new_dest, title, id}))
+                match symbol_link.render() {
+                    Ok(link_html) => {
+
+                        let new_dest = CowStr::Boxed(symbol_link.href().into());
+                        let link = CowStr::Boxed(link_html.into());
+
+                        // [Ok::<Event<'_>, Error>(Event::Start(Tag::Link { link_type, dest_url: new_dest, title, id}))]
+                        skip_next_endlink = true;
+                        vec![
+                            Ok(Event::Start(Tag::HtmlBlock)),
+                            Ok(Event::Html(link)),
+                            Ok(Event::End(TagEnd::HtmlBlock)),
+                        ]
+                    }
+                    Err(e) => {
+                        vec![Err(anyhow!(e))]
+                    }
+                }
+
             }
-            _ => Ok(e)
+            Event::End(TagEnd::Link) if skip_next_endlink  => {
+                skip_next_endlink = false;
+                vec![]
+            }
+            _ => vec![Ok(e)]
         }
 
     }).collect();
 
-    let events = events?;
-
-    chapter.content = cmark(events.iter(), &mut buf)
+    chapter.content = cmark(events?.iter(), &mut buf)
         .map(|_| buf)
         .map_err(|err| anyhow::Error::from(err))?;
 
