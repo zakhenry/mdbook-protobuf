@@ -133,9 +133,10 @@ pub fn link_proto_symbols(
 
     let mut buf = String::with_capacity(chapter.content.len());
 
-    let mut skip_next_endlink = false;
 
-    let events: Result<Vec<Event>> = Parser::new(&chapter.content).flat_map(|e| {
+    let mut current_link: Option<SymbolLink> = None;
+
+    let events: Result<Vec<Event>> = Parser::new(&chapter.content).filter_map(|e| {
 
         match e {
             Event::Start(Tag::Link {link_type,
@@ -167,8 +168,6 @@ pub fn link_proto_symbols(
 
                         scored_links.sort_by_key(|(_, distance)|*distance);
 
-                        dbg!(&scored_links);
-
                         let suggestions: Vec<_> = scored_links
                             .iter()
                             .rev()
@@ -186,7 +185,7 @@ pub fn link_proto_symbols(
                             format!("No protobuf symbol matched your query `{}`, consider one of the following near matches:\n{}", &link_query, suggestions.join("\n"))
                         };
 
-                        return vec![Err(anyhow!(err_str))]
+                        return Some(Err(anyhow!(err_str)))
                     }
                     1 => matches[0],
                     _ => {
@@ -197,38 +196,35 @@ pub fn link_proto_symbols(
 
                         let err_str = format!("More than one protobuf symbol matched your query. Replace your link with one of the following:\n{}", replacements.join("\n"));
 
-                        return vec![Err(anyhow!(err_str))]
+                        return Some(Err(anyhow!(err_str)))
                     }
                 }.clone();
 
-                symbol_link.set_label("foo".into());
-                // todo!()
+                current_link = Some(symbol_link);
 
-                match symbol_link.render() {
+                None
+            }
+            Event::Text(inner_text) if current_link.is_some() => {
+                current_link.as_mut().expect("is some").set_label(inner_text.to_string());
+                None
+            },
+            Event::End(TagEnd::Link) if current_link.is_some() => {
+
+                let result = match current_link.as_ref().expect("is some").render() {
                     Ok(link_html) => {
-
-                        let new_dest = CowStr::Boxed(symbol_link.href().into());
                         let link = CowStr::Boxed(link_html.into());
-
-                        // [Ok::<Event<'_>, Error>(Event::Start(Tag::Link { link_type, dest_url: new_dest, title, id}))]
-                        skip_next_endlink = true;
-                        vec![
-                            Ok(Event::Start(Tag::HtmlBlock)),
-                            Ok(Event::Html(link)),
-                            Ok(Event::End(TagEnd::HtmlBlock)),
-                        ]
+                        Ok(Event::InlineHtml(link))
                     }
                     Err(e) => {
-                        vec![Err(anyhow!(e))]
+                        Err(anyhow!(e))
                     }
-                }
+                };
 
+                current_link = None;
+
+                Some(result)
             }
-            Event::End(TagEnd::Link) if skip_next_endlink  => {
-                skip_next_endlink = false;
-                vec![]
-            }
-            _ => vec![Ok(e)]
+            _ => Some(Ok(e))
         }
 
     }).collect();
@@ -254,6 +250,8 @@ mod test {
 # test chapter
 
 Lorem ipsum [footnote link][1] [external link](https://example.com)
+
+<a href="foobar">inside</a>
 
 [1]: https://example.com
 
@@ -303,7 +301,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
             r#"
 # test chapter
 
-Lorem ipsum [proto link](/proto/hello.md#HelloWorld)
+Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
 "#
             .trim()
@@ -412,7 +410,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
             r#"
 # test chapter
 
-Lorem ipsum [proto link](/proto/hello.md#HelloWorld)
+Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
 "#
                 .trim()
