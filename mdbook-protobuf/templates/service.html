@@ -5,6 +5,7 @@
          <em>{{comment}}</em>
         {% endif %}
     {% endif %}
+    {{ backlinks|safe }}
     {% for method in methods %}
         {{ method|safe }}
     {% endfor %}

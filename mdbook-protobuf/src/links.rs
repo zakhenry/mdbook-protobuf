@@ -208,7 +208,7 @@ pub fn link_proto_symbols(
                             .collect();
 
                         let err_str = if suggestions.is_empty() {
-                            let random_sample: Vec<_> = scored_links.iter().map(|((fqsl,_))|format!("proto!({})", &fqsl)).take(3).collect();
+                            let random_sample: Vec<_> = scored_links.iter().map(|(fqsl,_)|format!("proto!({})", &fqsl)).take(3).collect();
                             format!("No protobuf symbol matched your query `{}`, or was similar. Sample of valid formats:\n{}", &link_query, random_sample.join("\n"))
                         } else {
                             format!("No protobuf symbol matched your query `{}`, consider one of the following near matches:\n{}", &link_query, suggestions.join("\n"))
@@ -395,12 +395,15 @@ Lorem ipsum [proto link](proto!(HelloWorld))
 
         let res = link_proto_symbols(&mut chapter, &mut HashMap::from(links));
 
-        assert_eq!(
-            res.unwrap_err().to_string(),
+        // contains check used as the order is (intentionally) not stable
+        assert!(vec![
             r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
 proto!(.hello.HelloWorld)
-proto!(.other.HelloWorld)"#
-        )
+proto!(.other.HelloWorld)"#,
+            r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
+proto!(.other.HelloWorld)
+proto!(.hello.HelloWorld)"#,
+        ].contains(&&*res.unwrap_err().to_string()));
     }
 
     #[test]

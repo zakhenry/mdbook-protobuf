@@ -310,6 +310,17 @@ struct Method {
     meta: Option<Location>,
     deprecated: bool,
     self_link: SymbolLink,
+    backlinks: Backlinks,
+}
+
+impl Linked for Method {
+    fn symbol_link(&self) -> &SymbolLink {
+        &self.self_link
+    }
+
+    fn set_backlinks(&mut self, backlinks: Backlinks) {
+        self.backlinks = backlinks
+    }
 }
 
 #[derive(Template)]
@@ -319,6 +330,17 @@ struct Service {
     methods: Vec<Method>,
     meta: Option<Location>,
     self_link: SymbolLink,
+    backlinks: Backlinks,
+}
+
+impl Linked for Service {
+    fn symbol_link(&self) -> &SymbolLink {
+        &self.self_link
+    }
+
+    fn set_backlinks(&mut self, backlinks: Backlinks) {
+        self.backlinks = backlinks
+    }
 }
 
 #[derive(Template)]
@@ -395,11 +417,13 @@ impl ProtoFileDescriptorTemplate {
                                     ],
                                 ),
                                 deprecated: m.options.clone().map_or(false, |o| o.deprecated()),
+                                backlinks: Default::default(),
                             }
                         })
                         .collect(),
                     meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
                     self_link: service_link,
+                    backlinks: Default::default(),
                 }
             })
             .collect();
@@ -476,6 +500,14 @@ impl ProtoNamespaceTemplate {
 
             for enum_type in &mut file.enums {
                 mutator(enum_type)
+            }
+
+            for service in &mut file.services {
+                mutator(service);
+
+                for method in &mut service.methods {
+                    mutator(method);
+                }
             }
         }
     }
