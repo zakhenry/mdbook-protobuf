@@ -1,4 +1,4 @@
-<fieldset class="service">
+<fieldset class="service" id="{{self_link.id()}}">
     <label>{{ name }}</label>
     {% if let Some(meta) = meta %}
        {% if let Some(comment) = meta.leading_comments %}

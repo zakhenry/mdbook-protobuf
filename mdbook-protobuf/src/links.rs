@@ -138,7 +138,7 @@ pub fn link_proto_symbols(
                 let link_query = &caps[1];
 
                 let matches: Vec<_> = links.iter().filter(|&s| {
-                    s.fqsl().contains(link_query)
+                    s.fqsl().ends_with(link_query)
                 }).collect();
 
                 let symbol_link = match matches.len() {
@@ -344,6 +344,45 @@ Lorem ipsum [proto link](proto!(HelloWord))
             res.unwrap_err().to_string(),
             r#"No protobuf symbol matched your query `HelloWord`, consider one of the following near matches:
 proto!(.hello.HelloWorld)"#
+        )
+    }
+
+
+    #[test]
+    fn should_link_to_parent_of_nested_message() {
+        let packages = HashSet::from(["hello".into()]);
+        let links = vec![
+            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+            SymbolLink::from_fqsl(".hello.HelloWorld.Nested".into(), &packages),
+        ];
+
+        let mut chapter = Chapter {
+            name: "".to_string(),
+            content: r#"
+# test chapter
+
+Lorem ipsum [proto link](proto!(HelloWorld))
+
+"#
+                .to_string(),
+            number: None,
+            sub_items: vec![],
+            path: None,
+            source_path: None,
+            parent_names: vec![],
+        };
+
+        link_proto_symbols(&mut chapter, &links, &mut Default::default()).expect("should succeed");
+
+        assert_eq!(
+            chapter.content.trim(),
+            r#"
+# test chapter
+
+Lorem ipsum [proto link](/proto/hello.md#HelloWorld)
+
+"#
+                .trim()
         )
     }
 }

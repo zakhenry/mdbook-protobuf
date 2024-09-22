@@ -318,6 +318,7 @@ struct Service {
     name: String,
     methods: Vec<Method>,
     meta: Option<Location>,
+    self_link: SymbolLink,
 }
 
 #[derive(Template)]
@@ -343,6 +344,17 @@ impl ProtoFileDescriptorTemplate {
             .enumerate()
             .map(|(service_idx, s)| {
                 let service_name: String = s.name().into();
+
+                let service_link = SymbolLink::from_fqsl(
+                    format!(
+                        ".{}.{}",
+                        descriptor.package(),
+                        &service_name,
+                    ),
+                    packages,
+                );
+
+                symbol_usages.entry(service_link.clone()).or_default();
                 Service {
                     name: service_name.clone(),
                     methods: s
@@ -352,15 +364,8 @@ impl ProtoFileDescriptorTemplate {
                         .map(|(method_idx, m)| {
                             let method_name: String = m.name().parse().unwrap();
 
-                            let method_link = SymbolLink::from_fqsl(
-                                format!(
-                                    ".{}.{}::{}",
-                                    descriptor.package(),
-                                    &service_name,
-                                    &method_name
-                                ),
-                                packages,
-                            );
+                            let mut method_link = service_link.clone();
+                            method_link.set_property(method_name.clone());
                             symbol_usages.entry(method_link.clone()).or_default();
 
                             let request_message =
@@ -398,6 +403,7 @@ impl ProtoFileDescriptorTemplate {
                         })
                         .collect(),
                     meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
+                    self_link: service_link,
                 }
             })
             .collect();
