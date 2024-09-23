@@ -1,4 +1,6 @@
 <fieldset class="message" id="{{self_link.id()}}">
+    {% if let Some(src) = source %}{{src|safe}}{% endif %}
+    {{comments|safe}}
     <label>
         {% if deprecated %}
         <s>{{ name }}</s>
@@ -6,11 +8,6 @@
         <span>{{ name }}</span>
         {% endif %}
     </label>
-    {% if let Some(meta) = meta %}
-    {% if let Some(comment) = meta.leading_comments %}
-    <em>{{comment}}</em>
-    {% endif %}
-    {% endif %}
 
     {% for field in fields %}
     {% match field %}

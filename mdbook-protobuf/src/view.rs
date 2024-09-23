@@ -7,11 +7,78 @@ use prost_types::{
     OneofDescriptorProto,
 };
 use std::collections::{HashMap, HashSet};
+use log::__private_api::loc;
 
 pub(crate) enum FieldType {
     Symbol(SymbolLink),
     Primitive(Type),
     Unimplemented,
+}
+
+#[derive(Template)]
+#[template(path = "source.html")]
+struct Source {
+    start_line: i32,
+    end_line: i32,
+    start_column: i32,
+    end_column: i32,
+    file_path: String,
+}
+
+impl Source {
+    fn from_location(location: &Location, file_path: &str) -> Self {
+
+        let mut src = match location.span.as_slice().to_owned()[..]{
+            [start_line, start_column, end_line, end_column] => {
+                Self {start_line, start_column, end_column, end_line, file_path: file_path.to_string()}
+            },
+            [start_line, start_column, end_column] => {
+                Self {start_line: start_line.clone(), start_column, end_column, end_line: start_line, file_path: file_path.to_string()}
+            },
+            _ => panic!("unexpected Location::span format")
+        };
+
+        src.start_line += 1;
+        src.end_line += 1;
+
+        src
+    }
+
+    fn href(&self) -> String {
+
+        let line = if self.end_line == self.start_line {
+            format!("L{}", self.start_line)
+        } else {
+            format!("L{}-L{}", self.start_line, self.end_line)
+        };
+
+        format!("{}#{}", self.file_path, line)
+    }
+}
+
+#[derive(Template, Default)]
+#[template(path = "comments.html")]
+struct Comments {
+    leading: Option<String>,
+    trailing: Option<String>,
+    leading_detached: Vec<String>
+}
+
+impl Comments {
+    fn from_location(location: &Option<Location>) -> Self {
+
+        if let Some(location) = location {
+
+            Self {
+                leading: location.leading_comments.clone(),
+                trailing: location.trailing_comments.clone(),
+                leading_detached: location.leading_detached_comments.clone(),
+            }
+        } else {
+            Default::default()
+        }
+
+    }
 }
 
 #[derive(Template)]
@@ -95,7 +162,8 @@ enum Field {
 #[template(path = "message.html")]
 pub(crate) struct ProtoMessage {
     name: String,
-    meta: Option<Location>,
+    comments: Comments,
+    source: Option<Source>,
     nested_message: Vec<ProtoMessage>,
     nested_enum: Vec<Enum>,
     fields: Vec<Field>,
@@ -180,11 +248,13 @@ impl ProtoMessage {
 
         fields.extend(oneofs.into_values().into_iter().map(Field::OneOf));
 
+        let location = read_source_code_info(file_descriptor, source_path);
         Self {
             name,
             self_link,
             namespace: parent_messages,
-            meta: read_source_code_info(file_descriptor, source_path),
+            comments: Comments::from_location(&location),
+            source: location.map(|location |Source::from_location(&location, file_descriptor.name())),
             nested_message: message_descriptor
                 .nested_type
                 .iter()
@@ -250,7 +320,8 @@ struct EnumValue {
 #[template(path = "enum.html")]
 pub(crate) struct Enum {
     name: String,
-    meta: Option<Location>,
+    comments: Comments,
+    source: Option<Source>,
     values: Vec<EnumValue>,
     namespace: Vec<String>,
     backlinks: Backlinks,
@@ -272,9 +343,10 @@ impl Enum {
         fq.push(name.clone());
         let fqsl = format!(".{}.{}", package, fq.join("."));
 
+        let location = read_source_code_info(file_descriptor, path);
+
         Self {
             name,
-            meta: read_source_code_info(file_descriptor, path),
             values: enum_descriptor
                 .value
                 .iter()
@@ -287,6 +359,8 @@ impl Enum {
             namespace,
             backlinks: Default::default(),
             self_link: SymbolLink::from_fqsl(fqsl, packages),
+            comments: Comments::from_location(&location),
+            source: location.map(|location |Source::from_location(&location, file_descriptor.name()))
         }
     }
 }
@@ -307,7 +381,8 @@ struct Method {
     name: String,
     request_message: SymbolLink,
     response_message: SymbolLink,
-    meta: Option<Location>,
+    comments: Comments,
+    source: Option<Source>,
     deprecated: bool,
     self_link: SymbolLink,
     backlinks: Backlinks,
@@ -328,7 +403,8 @@ impl Linked for Method {
 struct Service {
     name: String,
     methods: Vec<Method>,
-    meta: Option<Location>,
+    comments: Comments,
+    source: Option<Source>,
     self_link: SymbolLink,
     backlinks: Backlinks,
 }
@@ -373,6 +449,7 @@ impl ProtoFileDescriptorTemplate {
                 );
 
                 symbol_usages.entry(service_link.clone()).or_default();
+                let location = read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]);
                 Service {
                     name: service_name.clone(),
                     methods: s
@@ -402,28 +479,27 @@ impl ProtoFileDescriptorTemplate {
                                 .or_default()
                                 .push(Backlink::Symbol(method_link.clone()));
 
+                            let location = read_source_code_info(&descriptor, &[SERVICE_TAG,
+                                service_idx as i32,
+                                SERVICE_METHOD_TAG,
+                                method_idx as i32,]);
+
                             Method {
                                 name: method_name,
                                 request_message,
                                 response_message,
                                 self_link: method_link,
-                                meta: read_source_code_info(
-                                    &descriptor,
-                                    &[
-                                        SERVICE_TAG,
-                                        service_idx as i32,
-                                        SERVICE_METHOD_TAG,
-                                        method_idx as i32,
-                                    ],
-                                ),
                                 deprecated: m.options.clone().map_or(false, |o| o.deprecated()),
                                 backlinks: Default::default(),
+                                comments: Comments::from_location(&location),
+                                source: location.map(|location |Source::from_location(&location, descriptor.name()))
                             }
                         })
                         .collect(),
-                    meta: read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]),
                     self_link: service_link,
                     backlinks: Default::default(),
+                    comments: Comments::from_location(&location),
+                    source: location.map(|location |Source::from_location(&location, descriptor.name()))
                 }
             })
             .collect();

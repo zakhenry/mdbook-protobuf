@@ -1,15 +1,11 @@
 <fieldset class="method" id="{{self_link.id()}}">
-    {% if deprecated %}
-    <s>{{ name }}</s>
-    {% else %}
-    <span>{{ name }}</span>
-    {% endif %}
-    {% if let Some(meta) = meta %}
-    {% if let Some(comment) = meta.leading_comments %}
-    <em>{{comment}}</em>
-    {% endif %}
-    {% endif %}
-    <h2>{{request_message|safe}}</h2>
-    <h2>{{response_message|safe}}</h2>
+    {% if let Some(src) = source %}{{src|safe}}{% endif %}
+    {{comments|safe}}
+    <div class="rpc {% if deprecated %}deprecated{% endif %}">
+        <span class="name"><span class="keyword">rpc</span>{{ name }}</span>
+        <span class="request">({{request_message|safe}})</span>
+        <span class="keyword">returns</span>
+        <span class="response">({{response_message|safe}})</span>
+    </div>
     {{ backlinks|safe }}
 </fieldset>

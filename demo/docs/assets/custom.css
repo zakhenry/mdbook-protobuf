@@ -1,0 +1,9 @@
+.mdbook-proto {
+    fieldset {
+        border: none;
+    }
+
+    fieldset:target {
+        border-width: 2rem;
+    }
+}

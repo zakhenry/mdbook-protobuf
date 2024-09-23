@@ -1,4 +1,6 @@
 <fieldset class="enum" id="{{self_link.id()}}">
+    {% if let Some(src) = source %}{{src|safe}}{% endif %}
+    {{comments|safe}}
     <label>{{name}}</label>
     <ul>
         {% for value in values %}

@@ -1,10 +1,7 @@
 <fieldset class="service" id="{{self_link.id()}}">
+    {% if let Some(src) = source %}{{src|safe}}{% endif %}
     <label>{{ name }}</label>
-    {% if let Some(meta) = meta %}
-       {% if let Some(comment) = meta.leading_comments %}
-         <em>{{comment}}</em>
-        {% endif %}
-    {% endif %}
+    {{comments|safe}}
     {{ backlinks|safe }}
     {% for method in methods %}
         {{ method|safe }}

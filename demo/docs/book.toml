@@ -9,3 +9,7 @@ title = "mdbook-protobuf"
 #generated in build.rs, see line `.file_descriptor_set_path("./docs/build/proto_file_descriptor.pb")`
 proto_descriptor = "./build/proto_file_descriptor_set.pb"
 nest_under = "Protocol"
+
+[output.html]
+additional-css = ["assets/custom.css"]
+no-section-label = true
