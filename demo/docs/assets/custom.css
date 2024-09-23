@@ -1,9 +1,38 @@
 .mdbook-proto {
+
+    > label {
+        font-size: .8em;
+        color: var(--sidebar-non-existant);
+    }
+
+    border: none;
+
+    position: relative;
+
     fieldset {
         border: none;
     }
 
     fieldset:target {
         border-width: 2rem;
+    }
+
+    .source {
+        position: absolute;
+        right: 1rem;
+    }
+
+    .comment {
+        color: var(--sidebar-non-existant);
+    }
+
+    .message, .enum {
+        border-left: 1px solid var(--searchresults-border-color);
+    }
+
+    .services, .messages, .enums {
+        > label {
+            display: none;
+        }
     }
 }
