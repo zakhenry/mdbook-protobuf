@@ -50,7 +50,7 @@ impl ContentLink {
     }
 }
 
-#[derive(Template, Clone, Eq, Hash, PartialEq)]
+#[derive(Template, Clone, Eq, Hash, PartialEq, Debug)]
 #[template(path = "symbol_link.html")]
 pub(crate) struct SymbolLink {
     symbol: String,
@@ -61,40 +61,34 @@ pub(crate) struct SymbolLink {
 }
 
 impl SymbolLink {
+    pub(crate) fn from_fqsl(fqsl: String, packages: &HashSet<String>) -> Self {
+        let (fqsl_no_prop, property) = Self::split_property(&fqsl);
+        let best_match = Self::find_best_match(&fqsl_no_prop, packages);
+
+        let path = best_match.map(|package| package.replace(".", "/")).unwrap_or("".into());
+
+        let symbol = fqsl_no_prop[1..].strip_prefix(&format!("{}.", best_match.unwrap_or(&"".into()))).unwrap_or(&fqsl_no_prop[1..]).to_string();
+
+        Self {
+            symbol,
+            path,
+            property,
+            label_override: None,
+            own_id: None,
+        }
+    }
+
+    fn split_property(fqsl: &str) -> (String, Option<String>) {
+        fqsl.split_once("::").map_or((fqsl.to_string(), None), |(left, right)| (left.to_string(), Some(right.to_string())))
+    }
+
+    fn find_best_match<'a>(fqsl: &str, packages: &'a HashSet<String>) -> Option<&'a String> {
+        packages.iter().filter(|pkg| fqsl[1..].starts_with(pkg.as_str())).max_by_key(|pkg| pkg.len())
+    }
+
+
     pub(crate) fn set_property(&mut self, property: String) {
         self.property = Some(property)
-    }
-    // @todo refactor me, this function is a mess but write some tests first!
-    pub(crate) fn from_fqsl(fqsl: String, packages: &HashSet<String>) -> Self {
-        let (fqsl_no_prop, property) = if let Some((fqsl_no_prop, property)) = fqsl.split_once("::")
-        {
-            (fqsl_no_prop.to_string(), Some(property.to_string()))
-        } else {
-            (fqsl.clone(), None)
-        };
-
-        let best_match = packages
-            .iter()
-            .filter(|value| fqsl_no_prop[1..].starts_with(value.as_str()))
-            .max_by_key(|value| value.len());
-
-        if let Some(path) = best_match {
-            Self {
-                symbol: fqsl_no_prop[1..].replace(&format!("{}.", path), ""),
-                path: path.to_string().replace(".", "/"),
-                property,
-                label_override: None,
-                own_id: None,
-            }
-        } else {
-            Self {
-                symbol: fqsl_no_prop[1..].to_string(),
-                path: "".into(),
-                property,
-                label_override: None,
-                own_id: None,
-            }
-        }
     }
 
     pub(crate) fn id(&self) -> String {
@@ -166,13 +160,13 @@ pub fn link_proto_symbols(
     let mut current_link: Option<SymbolLink> = None;
 
     let events: Result<Vec<Event>> = Parser::new(&chapter.content).filter_map(|e| {
-
         match e {
-            Event::Start(Tag::Link {link_type,
+            Event::Start(Tag::Link {
+                             link_type,
                              dest_url,
                              title,
-                             id}) if re.is_match(&dest_url) => {
-
+                             id
+                         }) if re.is_match(&dest_url) => {
                 let Some(caps) = re.captures(&dest_url) else {
                     panic!("match with no capture!");
                 };
@@ -185,66 +179,54 @@ pub fn link_proto_symbols(
 
                 let mut symbol_link = match matches.len() {
                     0 => {
-
-                        let mut scored_links: Vec<_> = links.iter().map(|link|{
-                            let fqsl= link.fqsl();
+                        let mut scored_links: Vec<_> = links.iter().map(|link| {
+                            let fqsl = link.fqsl();
 
                             let distance = matcher.fuzzy_match(&fqsl, &link_query).unwrap_or(0);
 
                             (fqsl, distance)
-                        })
-                            .collect();
+                        }).collect();
 
-                        scored_links.sort_by_key(|(_, distance)|*distance);
+                        scored_links.sort_by_key(|(_, distance)| *distance);
 
-                        let suggestions: Vec<_> = scored_links
-                            .iter()
-                            .rev()
-                            .filter(|(_, distance)|*distance > 0)
-                            .take(3)
-                            .map(|(fqsl, _)|{
+                        let suggestions: Vec<_> = scored_links.iter().rev().filter(|(_, distance)| *distance > 0).take(3).map(|(fqsl, _)| {
                             format!("proto!({})", &fqsl)
-                        })
-                            .collect();
+                        }).collect();
 
                         let err_str = if suggestions.is_empty() {
-                            let random_sample: Vec<_> = scored_links.iter().map(|(fqsl,_)|format!("proto!({})", &fqsl)).take(3).collect();
+                            let random_sample: Vec<_> = scored_links.iter().map(|(fqsl, _)| format!("proto!({})", &fqsl)).take(3).collect();
                             format!("No protobuf symbol matched your query `{}`, or was similar. Sample of valid formats:\n{}", &link_query, random_sample.join("\n"))
                         } else {
                             format!("No protobuf symbol matched your query `{}`, consider one of the following near matches:\n{}", &link_query, suggestions.join("\n"))
                         };
 
-                        return Some(Err(anyhow!(err_str)))
+                        return Some(Err(anyhow!(err_str)));
                     }
                     1 => matches[0],
                     _ => {
-
-                        let replacements: Vec<_> = matches.iter().map(|&s|{
+                        let replacements: Vec<_> = matches.iter().map(|&s| {
                             format!("proto!({})", s.fqsl())
                         }).collect();
 
                         let err_str = format!("More than one protobuf symbol matched your query. Replace your link with one of the following:\n{}", replacements.join("\n"));
 
-                        return Some(Err(anyhow!(err_str)))
+                        return Some(Err(anyhow!(err_str)));
                     }
                 }.clone();
 
                 // don't backlink to draft chapters
                 if let Some(path) = &chapter.path {
-
-                    let current_usages_of_symbol = symbol_usages
-                        .entry(symbol_link.clone())
-                        .or_default();
+                    let current_usages_of_symbol = symbol_usages.entry(symbol_link.clone()).or_default();
 
                     let usage_id = chapter_link_id;
 
-                    let id = format!("{}{}",&usage_id, symbol_link.fqsl());
+                    let id = format!("{}{}", &usage_id, symbol_link.fqsl());
 
                     symbol_link.set_own_id(id.clone());
 
                     let label = format!("{}[{}]", chapter.name, &usage_id);
 
-                    let content_link = ContentLink { id, path: path.to_str().unwrap().to_string(), label};
+                    let content_link = ContentLink { id, path: path.to_str().unwrap().to_string(), label };
 
                     current_usages_of_symbol.push(Backlink::Content(content_link))
                 }
@@ -256,9 +238,8 @@ pub fn link_proto_symbols(
             Event::Text(inner_text) if current_link.is_some() => {
                 current_link.as_mut().expect("is some").set_label(inner_text.to_string());
                 None
-            },
+            }
             Event::End(TagEnd::Link) if current_link.is_some() => {
-
                 let result = match current_link.as_ref().expect("is some").render() {
                     Ok(link_html) => {
                         let link = CowStr::Boxed(link_html.into());
@@ -276,12 +257,9 @@ pub fn link_proto_symbols(
             }
             _ => Some(Ok(e))
         }
-
     }).collect();
 
-    chapter.content = cmark(events?.iter(), &mut buf)
-        .map(|_| buf)
-        .map_err(|err| anyhow::Error::from(err))?;
+    chapter.content = cmark(events?.iter(), &mut buf).map(|_| buf).map_err(|err| anyhow::Error::from(err))?;
 
     Ok(())
 }
@@ -291,6 +269,64 @@ mod test {
     use crate::links::{link_proto_symbols, SymbolLink};
     use mdbook::book::Chapter;
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn should_parse_simple_fqsl() {
+        let fqsl = ".package.Message";
+        let packages = HashSet::from(["package".into()]);
+
+        assert_eq!(SymbolLink::from_fqsl(fqsl.to_string(), &packages), SymbolLink {
+            symbol: "Message".to_string(),
+            path: "package".to_string(),
+            property: None,
+            label_override: None,
+            own_id: None
+        })
+    }
+
+    #[test]
+    fn should_parse_nested_fqsl() {
+        let fqsl = ".package.deeper.Message.Nested";
+        let packages = HashSet::from(["package".into(), "package.deeper".into()]);
+
+        assert_eq!(SymbolLink::from_fqsl(fqsl.to_string(), &packages), SymbolLink {
+            symbol: "Message.Nested".to_string(),
+            path: "package/deeper".to_string(),
+            property: None,
+            label_override: None,
+            own_id: None
+        })
+    }
+
+
+    #[test]
+    fn should_parse_properties_of_fqsl() {
+        let fqsl = ".package.Service::FooCall";
+        let packages = HashSet::from(["package".into()]);
+
+        assert_eq!(SymbolLink::from_fqsl(fqsl.to_string(), &packages), SymbolLink {
+            symbol: "Service".to_string(),
+            path: "package".to_string(),
+            property: Some("FooCall".into()),
+            label_override: None,
+            own_id: None
+        })
+    }
+
+    #[test]
+    fn should_handle_fqsl_that_omits_package() {
+        let fqsl = ".Foo";
+        let packages = HashSet::from(["package".into()]);
+
+        assert_eq!(SymbolLink::from_fqsl(fqsl.to_string(), &packages), SymbolLink {
+            symbol: "Foo".to_string(),
+            path: "".to_string(),
+            property: None,
+            label_override: None,
+            own_id: None
+        })
+    }
+
 
     #[test]
     fn should_preserve_normal_links() {
@@ -305,8 +341,7 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
 [1]: https://example.com
 
-            "#
-            .to_string(),
+            "#.to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -335,8 +370,7 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
 Lorem ipsum [proto link](proto!(HelloWorld))
 
-"#
-            .to_string(),
+"#.to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -353,8 +387,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
 
 Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
-"#
-            .trim()
+"#.trim()
         )
     }
 
@@ -384,8 +417,7 @@ Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
 Lorem ipsum [proto link](proto!(HelloWorld))
 
-"#
-            .to_string(),
+"#.to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -428,8 +460,7 @@ proto!(.hello.HelloWorld)"#,
 
 Lorem ipsum [proto link](proto!(HelloWord))
 
-"#
-            .to_string(),
+"#.to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -467,8 +498,7 @@ proto!(.hello.HelloWorld)"#
 
 Lorem ipsum [proto link](proto!(HelloWorld))
 
-"#
-            .to_string(),
+"#.to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -485,8 +515,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
 
 Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
-"#
-            .trim()
+"#.trim()
         )
     }
 }
