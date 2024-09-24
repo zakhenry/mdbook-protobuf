@@ -1,4 +1,4 @@
-use crate::links::{Backlink, Backlinks, Linked, SymbolLink};
+use crate::links::{Backlink, Backlinks, ProtoSymbol, SymbolLink};
 use askama::Template;
 use prost_types::field_descriptor_proto::Type;
 use prost_types::source_code_info::Location;
@@ -7,7 +7,6 @@ use prost_types::{
     OneofDescriptorProto,
 };
 use std::collections::{HashMap, HashSet};
-use log::__private_api::loc;
 
 pub(crate) enum FieldType {
     Symbol(SymbolLink),
@@ -23,17 +22,23 @@ struct Source {
     start_column: i32,
     end_column: i32,
     file_path: String,
+    url: Option<String>
 }
 
 impl Source {
+
+    fn set_source_url(&mut self, url: String) {
+        self.url = Some(url)
+    }
+
     fn from_location(location: &Location, file_path: &str) -> Self {
 
         let mut src = match location.span.as_slice().to_owned()[..]{
             [start_line, start_column, end_line, end_column] => {
-                Self {start_line, start_column, end_column, end_line, file_path: file_path.to_string()}
+                Self {start_line, start_column, end_column, end_line, file_path: file_path.to_string(), url: None}
             },
             [start_line, start_column, end_column] => {
-                Self {start_line: start_line.clone(), start_column, end_column, end_line: start_line, file_path: file_path.to_string()}
+                Self {start_line: start_line.clone(), start_column, end_column, end_line: start_line, file_path: file_path.to_string(), url:None}
             },
             _ => panic!("unexpected Location::span format")
         };
@@ -52,8 +57,9 @@ impl Source {
             format!("L{}-L{}", self.start_line, self.end_line)
         };
 
-        format!("{}#{}", self.file_path, line)
+        format!("{}{}#{}", self.url.as_ref().unwrap_or(&"".to_string()), self.file_path, line)
     }
+
 }
 
 #[derive(Template, Default)]
@@ -100,10 +106,12 @@ impl SimpleField {
         path: &[i32],
         packages: &HashSet<String>,
         parent_symbol: &SymbolLink,
+        symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
     ) -> Self {
         let name: String = field_descriptor.name().into();
         let mut self_link = parent_symbol.clone();
         self_link.set_property(name.clone());
+        symbol_usages.entry(self_link.clone()).or_default();
 
         Self {
             name,
@@ -204,6 +212,7 @@ impl ProtoMessage {
                     nested_path.as_ref(),
                     packages,
                     &self_link,
+                    symbol_usages
                 )
             })
             .collect();
@@ -300,13 +309,17 @@ impl ProtoMessage {
     }
 }
 
-impl Linked for ProtoMessage {
+impl ProtoSymbol for ProtoMessage {
     fn symbol_link(&self) -> &SymbolLink {
         &self.self_link
     }
 
     fn set_backlinks(&mut self, backlinks: Backlinks) {
         self.backlinks = backlinks
+    }
+
+    fn set_source_url(&mut self, source_url: String) {
+        self.source.as_mut().map(|src| src.set_source_url(source_url));
     }
 }
 
@@ -365,13 +378,18 @@ impl Enum {
     }
 }
 
-impl Linked for Enum {
+impl ProtoSymbol for Enum {
     fn symbol_link(&self) -> &SymbolLink {
         &self.self_link
     }
 
     fn set_backlinks(&mut self, backlinks: Backlinks) {
         self.backlinks = backlinks
+    }
+
+
+    fn set_source_url(&mut self, source_url: String) {
+        self.source.as_mut().map(|src| src.set_source_url(source_url));
     }
 }
 
@@ -390,13 +408,18 @@ struct Method {
     backlinks: Backlinks,
 }
 
-impl Linked for Method {
+impl ProtoSymbol for Method {
     fn symbol_link(&self) -> &SymbolLink {
         &self.self_link
     }
 
     fn set_backlinks(&mut self, backlinks: Backlinks) {
         self.backlinks = backlinks
+    }
+
+
+    fn set_source_url(&mut self, source_url: String) {
+        self.source.as_mut().map(|src| src.set_source_url(source_url));
     }
 }
 
@@ -411,13 +434,17 @@ struct Service {
     backlinks: Backlinks,
 }
 
-impl Linked for Service {
+impl ProtoSymbol for Service {
     fn symbol_link(&self) -> &SymbolLink {
         &self.self_link
     }
 
     fn set_backlinks(&mut self, backlinks: Backlinks) {
         self.backlinks = backlinks
+    }
+
+    fn set_source_url(&mut self, source_url: String) {
+        self.source.as_mut().map(|src| src.set_source_url(source_url));
     }
 }
 
@@ -563,7 +590,7 @@ impl ProtoNamespaceTemplate {
 
     pub(crate) fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mut mutator: F)
     where
-        F: Fn(&mut dyn Linked) + Clone,
+        F: Fn(&mut dyn ProtoSymbol) + Clone,
     {
         for message in messages {
             mutator(message);
@@ -573,7 +600,7 @@ impl ProtoNamespaceTemplate {
 
     pub(crate) fn mutate_symbols<F>(&mut self, mut mutator: F)
     where
-        F: Fn(&mut dyn Linked) + Clone,
+        F: Fn(&mut dyn ProtoSymbol) + Clone,
     {
         for mut file in &mut self.files {
             Self::mutate_messages(&mut file.messages, mutator.clone());

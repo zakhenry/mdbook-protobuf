@@ -12,7 +12,7 @@ use askama::filters::format;
 use askama::Template;
 use bytes::Bytes;
 use clap::arg;
-use links::{Backlinks, Linked};
+use links::{Backlinks, ProtoSymbol};
 use log::{debug, info, warn};
 use mdbook::book::{Book, Chapter, SectionNumber};
 use mdbook::preprocess::{Preprocessor, PreprocessorContext};
@@ -57,6 +57,7 @@ impl ProtobufPreprocessor {
 pub struct ProtobufPreprocessorArgs {
     nest_under: Option<String>,
     file_descriptor_path: PathBuf,
+    proto_url_root: Option<String>
 }
 
 impl ProtobufPreprocessorArgs {
@@ -84,6 +85,9 @@ impl ProtobufPreprocessorArgs {
             nest_under: config
                 .get("nest_under")
                 .and_then(|v| v.as_str().map(|s| s.to_string())),
+            proto_url_root: config
+                .get("proto_url_root")
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
         })
     }
 }
@@ -94,11 +98,11 @@ impl Preprocessor for ProtobufPreprocessor {
     }
 
     fn run(&self, ctx: &PreprocessorContext, mut book: Book) -> Result<Book, Error> {
-        info!("book: {:?}", book);
+        // info!("book: {:?}", book);
 
         let args = ProtobufPreprocessorArgs::new(ctx)?;
 
-        info!("fd: {:?}", args.file_descriptor_path);
+        // info!("fd: {:?}", args.file_descriptor_path);
 
         let file_descriptor_set = read_file_descriptor_set(args.file_descriptor_path.as_path())?;
 
@@ -133,6 +137,13 @@ impl Preprocessor for ProtobufPreprocessor {
         }
 
         links::assign_backlinks(&mut namespaces, symbol_usages);
+
+        if let Some(source_url) = args.proto_url_root {
+            info!("assigning source url to proto symbols: {}", &source_url);
+            links::assign_source_url(&mut namespaces, source_url);
+        } else {
+            warn!("proto_url_root was not set, so `[src]` links will not go to the correct destination");
+        }
 
         // @todo support searching sub chapters
         let target_chapter = if let Some(nest_under) = args.nest_under {
@@ -223,7 +234,8 @@ mod test {
                         },
                         "preprocessor": {
                             "protobuf": {
-                                "proto_descriptor": "../demo/docs/build/proto_file_descriptor_set.pb"
+                                "proto_descriptor": "../demo/docs/build/proto_file_descriptor_set.pb",
+                                "proto_url_root": "http://example.com/proto/"
                             }
                         }
                     },

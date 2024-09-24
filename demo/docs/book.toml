@@ -9,6 +9,7 @@ title = "mdbook-protobuf"
 #generated in build.rs, see line `.file_descriptor_set_path("./docs/build/proto_file_descriptor.pb")`
 proto_descriptor = "./build/proto_file_descriptor_set.pb"
 nest_under = "Protocol"
+proto_url_root = "https://github.com/zakhenry/mdbook-protobuf/tree/master/demo/proto/"
 
 [output.html]
 additional-css = ["assets/custom.css"]

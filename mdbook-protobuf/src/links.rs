@@ -1,21 +1,22 @@
 use crate::view::ProtoNamespaceTemplate;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use askama::Template;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use mdbook::book::Chapter;
+use mdbook::book::{Chapter, Link};
 use pulldown_cmark::{CowStr, Event, Parser, Tag, TagEnd};
 use pulldown_cmark_to_cmark::cmark;
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-pub(crate) trait Linked {
+pub(crate) trait ProtoSymbol {
     fn symbol_link(&self) -> &SymbolLink;
     fn fqsl(&self) -> String {
         self.symbol_link().fqsl()
     }
 
     fn set_backlinks(&mut self, backlinks: Backlinks);
+    fn set_source_url(&mut self, source_url: String);
 }
 
 #[derive(Template, Default)]
@@ -137,6 +138,17 @@ pub fn assign_backlinks(
             if let Some(usages) = symbol_usages.get(&symbol.symbol_link()) {
                 symbol.set_backlinks(Backlinks::new(usages.clone()))
             }
+        })
+    }
+}
+
+pub fn assign_source_url(
+    document: &mut BTreeMap<String, ProtoNamespaceTemplate>,
+    source_url: String,
+) {
+    for (_, namespace) in document {
+        namespace.mutate_symbols(|symbol| {
+            symbol.set_source_url(source_url.clone())
         })
     }
 }
