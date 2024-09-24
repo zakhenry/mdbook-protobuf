@@ -1,3 +1,7 @@
+html:has(.mdbook-proto) {
+    scroll-behavior: smooth;
+}
+
 .mdbook-proto {
 
     > label {
@@ -14,7 +18,8 @@
     }
 
     fieldset:target {
-        border-width: 2rem;
+        border-width: 2px;
+        border-color: var(--sidebar-fg);
     }
 
     .source {
@@ -26,13 +31,102 @@
         color: var(--sidebar-non-existant);
     }
 
-    .message, .enum {
+    .message, .enum, .method {
         border-left: 1px solid var(--searchresults-border-color);
+        border-bottom: 1px solid var(--searchresults-border-color);
+        margin-bottom: 15px;
+    }
+
+    .service, .enum, .message, .method, .oneof {
+        >label:before {
+            font-family: monospace;
+            color: var(--searchresults-border-color);
+            margin-right: 5px;
+        }
+    }
+
+    .method>label:before {
+        content: "rpc";
+    }
+
+    .service>label:before {
+        content: "service";
+    }
+
+    .oneof>label:before {
+        content: "oneof";
+    }
+
+    .message>label:before {
+        content: "message";
+    }
+
+    .enum>label:before {
+        content: "enum";
     }
 
     .services, .messages, .enums {
         > label {
             display: none;
+        }
+    }
+
+    .service {
+        padding-left: 0;
+    }
+
+    .keyword {
+        font-style: italic;
+    }
+
+    .backlinks {
+
+        > summary {
+            list-style: none;
+        }
+        > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        summary>span {
+
+            font-size: 0.7em;
+            color: var(--sidebar-active);
+            &:before {
+                content: "[";
+            }
+            &:after {
+                content: "]";
+            }
+        }
+        cursor: pointer;
+    }
+
+    .field {
+        label {
+            &:after {
+                content: ":";
+            }
+            padding-right: 5px;
+            font-family: monospace;
+        }
+        .type {
+            font-size: 1.3rem;
+            display: inline-flex;
+            border: 1px solid var(--sidebar-non-existant);
+            border-radius: 5px;
+            padding: 5px;
+
+            .optional {
+                font-style: italic;
+                padding-right: 5px;
+            }
+
+            .primitive {
+                em {
+                    display: none; /*hide proto info for now*/
+                }
+            }
         }
     }
 }

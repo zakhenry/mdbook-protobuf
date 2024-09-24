@@ -1,6 +1,5 @@
-{% if links.len() > 0 %}
-<fieldset>
-    <label>backlinks</label>
+<details class="backlinks">
+    <summary><span class="summary">{{links.len()}}&nbsp;usage{% if links.len() != 1 %}s{%endif%}</span></summary>
     <ul>
         {% for link in links %}
         {% match link %}
@@ -11,5 +10,4 @@
         {% endmatch %}
         {% endfor %}
     </ul>
-</fieldset>
-{% endif %}
+</details>

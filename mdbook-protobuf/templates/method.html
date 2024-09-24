@@ -1,11 +1,11 @@
 <fieldset class="method" id="{{self_link.id()}}">
-    {% if let Some(src) = source %}{{src|safe}}{% endif %}
     {{comments|safe}}
-    <div class="rpc {% if deprecated %}deprecated{% endif %}">
-        <span class="name"><span class="keyword">rpc</span>{{ name }}</span>
-        <span class="request">({{request_message|safe}})</span>
-        <span class="keyword">returns</span>
-        <span class="response">({{response_message|safe}})</span>
-    </div>
     {{ backlinks|safe }}
+    {% if let Some(src) = source %}{{src|safe}}{% endif %}
+    <label class="{% if deprecated %}deprecated{% endif %}">
+        <span class="name">{{ name }}</span>
+        <span class="request">({%if request_stream %}<span class="keyword">stream&nbsp;</span>{%endif%}{{request_message|safe}})</span>
+        <span class="keyword">returns</span>
+        <span class="response">({%if response_stream %}<span class="keyword">stream&nbsp;</span>{%endif%}{{response_message|safe}})</span>
+    </label>
 </fieldset>

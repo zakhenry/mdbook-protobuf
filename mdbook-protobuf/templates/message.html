@@ -1,6 +1,7 @@
 <fieldset class="message" id="{{self_link.id()}}">
-    {% if let Some(src) = source %}{{src|safe}}{% endif %}
     {{comments|safe}}
+    {{ backlinks|safe }}
+    {% if let Some(src) = source %}{{src|safe}}{% endif %}
     <label>
         {% if deprecated %}
         <s>{{ name }}</s>
@@ -25,6 +26,4 @@
     {% for enum in nested_enum %}
     {{ enum|safe }}
     {% endfor %}
-
-    {{ backlinks|safe }}
 </fieldset>

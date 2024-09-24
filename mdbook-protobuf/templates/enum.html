@@ -1,6 +1,7 @@
 <fieldset class="enum" id="{{self_link.id()}}">
-    {% if let Some(src) = source %}{{src|safe}}{% endif %}
     {{comments|safe}}
+    {{ backlinks|safe }}
+    {% if let Some(src) = source %}{{src|safe}}{% endif %}
     <label>{{name}}</label>
     <ul>
         {% for value in values %}
@@ -13,5 +14,4 @@
         </li>
         {% endfor %}
     </ul>
-    {{ backlinks|safe }}
 </fieldset>

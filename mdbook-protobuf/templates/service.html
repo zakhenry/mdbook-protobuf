@@ -1,8 +1,8 @@
 <fieldset class="service" id="{{self_link.id()}}">
-    {% if let Some(src) = source %}{{src|safe}}{% endif %}
-    <label>{{ name }}</label>
     {{comments|safe}}
     {{ backlinks|safe }}
+    {% if let Some(src) = source %}{{src|safe}}{% endif %}
+    <label>{{ name }}</label>
     {% for method in methods %}
         {{ method|safe }}
     {% endfor %}

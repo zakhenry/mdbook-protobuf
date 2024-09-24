@@ -6,10 +6,10 @@
         <span>{{ name }}</span>
         {% endif %}
     </label>
+<span class="type">
 {% if optional %}
-<span class="optional">(optional)</span>
+<span class="optional keyword">optional</span>
 {% endif %}
-<strong class="type">
     {% match typ %}
         {% when FieldType::Primitive with (primitive) %}
             {{ FieldType::definition(typ)|safe }}
@@ -18,7 +18,7 @@
         {% else %}
            @todo match unimplemented type
     {% endmatch %}
-</strong>
+</span>
 
     {% if let Some(meta) = meta %}
     {% if let Some(comment) = meta.leading_comments %}
