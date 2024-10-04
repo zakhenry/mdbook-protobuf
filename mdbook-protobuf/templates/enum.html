@@ -6,6 +6,7 @@
     <ul>
         {% for value in values %}
         <li class="enum-value" data-tag="{{value.tag}}">
+            {{value.comments|safe}}
             {% if value.deprecated %}
             <s>{{ value.name }}</s>
             {% else %}

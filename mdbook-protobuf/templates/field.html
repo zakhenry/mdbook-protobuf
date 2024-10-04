@@ -1,4 +1,5 @@
 <fieldset class="field" id="{{self_link.id()}}">
+    {{comments|safe}}
     <label>
         {% if deprecated %}
         <s>{{ name }}</s>
@@ -20,9 +21,4 @@
     {% endmatch %}
 </span>
 
-    {% if let Some(meta) = meta %}
-    {% if let Some(comment) = meta.leading_comments %}
-    <em>{{comment}}</em>
-    {% endif %}
-    {% endif %}
 </fieldset>

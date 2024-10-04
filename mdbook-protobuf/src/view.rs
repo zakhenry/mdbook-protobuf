@@ -62,6 +62,23 @@ impl Source {
 
 }
 
+// Any filter defined in the module `filters` is accessible in your template.
+mod filters {
+    // This filter does not have extra arguments
+    pub fn md<T: std::fmt::Display>(markdown_input: T) -> ::askama::Result<String> {
+
+        let markdown = markdown_input.to_string();
+
+        let parser = pulldown_cmark::Parser::new(markdown.as_str());
+
+        // Write to a new String buffer.
+        let mut html_output = String::new();
+        pulldown_cmark::html::push_html(&mut html_output, parser);
+
+        Ok(html_output)
+    }
+}
+
 #[derive(Template, Default)]
 #[template(path = "comments.html")]
 struct Comments {
@@ -85,13 +102,15 @@ impl Comments {
         }
 
     }
+
 }
 
 #[derive(Template)]
 #[template(path = "field.html")]
 struct SimpleField {
     name: String,
-    meta: Option<Location>,
+    comments: Comments,
+    source: Option<Source>,
     typ: FieldType,
     optional: bool,
     oneof_index: Option<i32>,
@@ -112,10 +131,11 @@ impl SimpleField {
         let mut self_link = parent_symbol.clone();
         self_link.set_property(name.clone());
         symbol_usages.entry(self_link.clone()).or_default();
-
+        let location = read_source_code_info(file_descriptor, path);
         Self {
             name,
-            meta: read_source_code_info(file_descriptor, path),
+            comments: Comments::from_location(&location),
+            source: location.map(|location |Source::from_location(&location, file_descriptor.name())),
             typ: match field_descriptor.r#type {
                 None => {
                     FieldType::Unimplemented // todo look up fully qualified from index.
@@ -143,7 +163,7 @@ impl SimpleField {
 #[template(path = "oneof_field.html")]
 struct OneOfField {
     name: String,
-    meta: Option<Location>,
+    comments: Comments,
     fields: Vec<SimpleField>,
 }
 
@@ -153,9 +173,10 @@ impl OneOfField {
         oneof_descriptor: &OneofDescriptorProto,
         path: &[i32],
     ) -> Self {
+        let location = read_source_code_info(file_descriptor, path);
         Self {
             name: oneof_descriptor.name().into(),
-            meta: read_source_code_info(file_descriptor, path),
+            comments: Comments::from_location(&location),
             fields: Vec::new(),
         }
     }
@@ -327,6 +348,7 @@ struct EnumValue {
     tag: i32,
     name: String,
     deprecated: bool,
+    comments: Comments
 }
 
 #[derive(Template)]
@@ -363,10 +385,17 @@ impl Enum {
             values: enum_descriptor
                 .value
                 .iter()
-                .map(|v| EnumValue {
-                    name: v.name().to_string(),
-                    tag: v.number(),
-                    deprecated: v.clone().options.map_or(false, |o| o.deprecated()),
+                .enumerate()
+                .map(|(idx, v)| {
+                    let mut nested_path = path.to_vec();
+                    nested_path.extend(&[ENUM_FIELD_TAG, idx as i32]);
+                    let location = read_source_code_info(file_descriptor, &nested_path);
+                    EnumValue {
+                        name: v.name().to_string(),
+                        tag: v.number(),
+                        deprecated: v.clone().options.map_or(false, |o| o.deprecated()),
+                        comments: Comments::from_location(&location)
+                    }
                 })
                 .collect(),
             namespace,
@@ -628,6 +657,7 @@ const MESSAGE_ONEOF_TAG: i32 = 8;
 const MESSAGE_TYPE_TAG: i32 = 4;
 const ENUM_TYPE_TAG: i32 = 5;
 const SERVICE_TAG: i32 = 6;
+const ENUM_FIELD_TAG: i32 = 2;
 
 fn read_source_code_info(descriptor: &FileDescriptorProto, path: &[i32]) -> Option<Location> {
     if let Some(info) = &descriptor.source_code_info {

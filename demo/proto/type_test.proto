@@ -39,7 +39,7 @@ message Message {
 enum Enum {
   VALUE_0 = 0;
   VALUE_1 = 1;
-  VALUE_3 = 3;
+  VALUE_3 = 3; // comment on VALUE_3
   VALUE_7 = 7;
   VALUE_9 = 9 [deprecated = true];
 }
@@ -119,3 +119,45 @@ message TypeTest {
     bool field_name = 1;
   }
 }
+
+// detached
+
+// ```rs
+// let bar = Some(42); // Example value; could be `None` if no value is present
+// if let Some(foo) = bar {
+//    println!("foo is {:?}", &foo);
+// }
+// ```
+
+// ```cpp
+// std::optional<int> bar = 42; // Example value; could be `std::nullopt` if no value is present
+// if (bar) {
+//     std::cout << "foo is " << *bar << std::endl;
+// }
+// ```
+
+// ![image example](/images/service_diagram.png)
+
+// directly above [Comments](#Comments) message
+message Comments { // inline with [Comments] message
+  // inside comments declaration
+
+  // above choice field
+  oneof choice { // inline with choice field
+    // above a
+    string a = 1; // inline with a
+    // trailing a
+
+    // between a & b
+
+    // above b
+    string b = 2; // inline with b
+    //trailing b
+
+  }
+  // trailing oneof choice
+
+  // detached within [Comments]
+
+} // inline with comments closing
+// trailing [Comments]

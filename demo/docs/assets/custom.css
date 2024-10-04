@@ -3,6 +3,9 @@ html:has(.mdbook-proto) {
 }
 
 .mdbook-proto {
+    .deprecated {
+        text-decoration: line-through;
+    }
 
     > label {
         font-size: .8em;
@@ -29,11 +32,18 @@ html:has(.mdbook-proto) {
 
     .comment {
         color: var(--sidebar-non-existant);
+        p {
+            margin: auto;
+        }
+
+        /* add spacing only between adjacent comments */
+        + .comment {
+            margin-top: 1rem;
+        }
     }
 
     .message, .enum, .method {
         border-left: 1px solid var(--searchresults-border-color);
-        border-bottom: 1px solid var(--searchresults-border-color);
         margin-bottom: 15px;
     }
 
@@ -65,6 +75,11 @@ html:has(.mdbook-proto) {
         content: "enum";
     }
 
+    .enum ul {
+        list-style-type: none;
+        padding: 0;
+    }
+
     .services, .messages, .enums {
         > label {
             display: none;
@@ -80,6 +95,10 @@ html:has(.mdbook-proto) {
     }
 
     .backlinks {
+
+        &[data-usage-count="0"] {
+            display: none;
+        }
 
         > summary {
             list-style: none;
@@ -106,9 +125,9 @@ html:has(.mdbook-proto) {
         label {
             &:after {
                 content: ":";
+                color: var(--sidebar-non-existant);
             }
             padding-right: 5px;
-            font-family: monospace;
         }
         .type {
             font-size: 1.3rem;

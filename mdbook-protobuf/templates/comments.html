@@ -1,9 +1,9 @@
 {% for comment in leading_detached %}
-<div class="detached-leading comment">{{comment}}</div>
+<div class="detached-leading comment">{{comment|md|safe}}</div>
 {% endfor %}
 {% if let Some(comment) = leading %}
-<div class="leading comment">{{comment}}</div>
+<div class="leading comment">{{comment|md|safe}}</div>
 {% endif %}
 {% if let Some(comment) = trailing %}
-<div class="trailing comment">{{comment}}</div>
+<div class="trailing comment">{{comment|md|safe}}</div>
 {% endif %}
