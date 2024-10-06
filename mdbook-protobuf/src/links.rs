@@ -4,8 +4,8 @@ use askama::Template;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use mdbook::book::{Chapter, Link};
-use pulldown_cmark::{CowStr, Event, Parser, Tag, TagEnd};
-use pulldown_cmark_to_cmark::cmark;
+use pulldown_cmark::{CowStr, Event, Parser, Tag, TagEnd, Options};
+use pulldown_cmark_to_cmark::{cmark, cmark_with_options};
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -171,7 +171,13 @@ pub fn link_proto_symbols(
 
     let mut current_link: Option<SymbolLink> = None;
 
-    let events: Result<Vec<Event>> = Parser::new(&chapter.content).filter_map(|e| {
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_FOOTNOTES);
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TASKLISTS);
+
+    let events: Result<Vec<Event>> = Parser::new_ext(&chapter.content, opts).filter_map(|e| {
         match e {
             Event::Start(Tag::Link {
                              link_type,
