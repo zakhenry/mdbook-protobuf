@@ -34,6 +34,11 @@ html:has(.mdbook-proto) {
     .source {
         position: absolute;
         right: 1rem;
+        visibility: hidden;
+    }
+
+    fieldset:hover>.source {
+        visibility: visible;
     }
 
     .comment {

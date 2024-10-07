@@ -22,25 +22,33 @@ struct Source {
     start_column: i32,
     end_column: i32,
     file_path: String,
-    url: Option<String>
+    url: Option<String>,
 }
 
 impl Source {
-
     fn set_source_url(&mut self, url: String) {
         self.url = Some(url)
     }
 
     fn from_location(location: &Location, file_path: &str) -> Self {
-
-        let mut src = match location.span.as_slice().to_owned()[..]{
-            [start_line, start_column, end_line, end_column] => {
-                Self {start_line, start_column, end_column, end_line, file_path: file_path.to_string(), url: None}
+        let mut src = match location.span.as_slice().to_owned()[..] {
+            [start_line, start_column, end_line, end_column] => Self {
+                start_line,
+                start_column,
+                end_column,
+                end_line,
+                file_path: file_path.to_string(),
+                url: None,
             },
-            [start_line, start_column, end_column] => {
-                Self {start_line: start_line.clone(), start_column, end_column, end_line: start_line, file_path: file_path.to_string(), url:None}
+            [start_line, start_column, end_column] => Self {
+                start_line: start_line.clone(),
+                start_column,
+                end_column,
+                end_line: start_line,
+                file_path: file_path.to_string(),
+                url: None,
             },
-            _ => panic!("unexpected Location::span format")
+            _ => panic!("unexpected Location::span format"),
         };
 
         src.start_line += 1;
@@ -50,23 +58,25 @@ impl Source {
     }
 
     fn href(&self) -> String {
-
         let line = if self.end_line == self.start_line {
             format!("L{}", self.start_line)
         } else {
             format!("L{}-L{}", self.start_line, self.end_line)
         };
 
-        format!("{}{}#{}", self.url.as_ref().unwrap_or(&"".to_string()), self.file_path, line)
+        format!(
+            "{}{}#{}",
+            self.url.as_ref().unwrap_or(&"".to_string()),
+            self.file_path,
+            line
+        )
     }
-
 }
 
 // Any filter defined in the module `filters` is accessible in your template.
 mod filters {
     // This filter does not have extra arguments
     pub fn md<T: std::fmt::Display>(markdown_input: T) -> ::askama::Result<String> {
-
         let markdown = markdown_input.to_string();
 
         let parser = pulldown_cmark::Parser::new(markdown.as_str());
@@ -84,14 +94,12 @@ mod filters {
 struct Comments {
     leading: Option<String>,
     trailing: Option<String>,
-    leading_detached: Vec<String>
+    leading_detached: Vec<String>,
 }
 
 impl Comments {
     fn from_location(location: &Option<Location>) -> Self {
-
         if let Some(location) = location {
-
             Self {
                 leading: location.leading_comments.clone(),
                 trailing: location.trailing_comments.clone(),
@@ -100,9 +108,7 @@ impl Comments {
         } else {
             Default::default()
         }
-
     }
-
 }
 
 #[derive(Template)]
@@ -135,7 +141,8 @@ impl SimpleField {
         Self {
             name,
             comments: Comments::from_location(&location),
-            source: location.map(|location |Source::from_location(&location, file_descriptor.name())),
+            source: location
+                .map(|location| Source::from_location(&location, file_descriptor.name())),
             typ: match field_descriptor.r#type {
                 None => {
                     FieldType::Unimplemented // todo look up fully qualified from index.
@@ -233,7 +240,7 @@ impl ProtoMessage {
                     nested_path.as_ref(),
                     packages,
                     &self_link,
-                    symbol_usages
+                    symbol_usages,
                 )
             })
             .collect();
@@ -284,7 +291,8 @@ impl ProtoMessage {
             self_link,
             namespace: parent_messages,
             comments: Comments::from_location(&location),
-            source: location.map(|location |Source::from_location(&location, file_descriptor.name())),
+            source: location
+                .map(|location| Source::from_location(&location, file_descriptor.name())),
             nested_message: message_descriptor
                 .nested_type
                 .iter()
@@ -340,7 +348,9 @@ impl ProtoSymbol for ProtoMessage {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source.as_mut().map(|src| src.set_source_url(source_url));
+        self.source
+            .as_mut()
+            .map(|src| src.set_source_url(source_url));
     }
 }
 
@@ -348,7 +358,7 @@ struct EnumValue {
     tag: i32,
     name: String,
     deprecated: bool,
-    comments: Comments
+    comments: Comments,
 }
 
 #[derive(Template)]
@@ -394,7 +404,7 @@ impl Enum {
                         name: v.name().to_string(),
                         tag: v.number(),
                         deprecated: v.clone().options.map_or(false, |o| o.deprecated()),
-                        comments: Comments::from_location(&location)
+                        comments: Comments::from_location(&location),
                     }
                 })
                 .collect(),
@@ -402,7 +412,8 @@ impl Enum {
             backlinks: Default::default(),
             self_link: SymbolLink::from_fqsl(fqsl, packages),
             comments: Comments::from_location(&location),
-            source: location.map(|location |Source::from_location(&location, file_descriptor.name()))
+            source: location
+                .map(|location| Source::from_location(&location, file_descriptor.name())),
         }
     }
 }
@@ -416,9 +427,10 @@ impl ProtoSymbol for Enum {
         self.backlinks = backlinks
     }
 
-
     fn set_source_url(&mut self, source_url: String) {
-        self.source.as_mut().map(|src| src.set_source_url(source_url));
+        self.source
+            .as_mut()
+            .map(|src| src.set_source_url(source_url));
     }
 }
 
@@ -446,9 +458,10 @@ impl ProtoSymbol for Method {
         self.backlinks = backlinks
     }
 
-
     fn set_source_url(&mut self, source_url: String) {
-        self.source.as_mut().map(|src| src.set_source_url(source_url));
+        self.source
+            .as_mut()
+            .map(|src| src.set_source_url(source_url));
     }
 }
 
@@ -473,7 +486,9 @@ impl ProtoSymbol for Service {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source.as_mut().map(|src| src.set_source_url(source_url));
+        self.source
+            .as_mut()
+            .map(|src| src.set_source_url(source_url));
     }
 }
 
@@ -507,7 +522,8 @@ impl ProtoFileDescriptorTemplate {
                 );
 
                 symbol_usages.entry(service_link.clone()).or_default();
-                let location = read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]);
+                let location =
+                    read_source_code_info(&descriptor, &[SERVICE_TAG, service_idx as i32]);
                 Service {
                     name: service_name.clone(),
                     methods: s
@@ -537,10 +553,15 @@ impl ProtoFileDescriptorTemplate {
                                 .or_default()
                                 .push(Backlink::Symbol(method_link.clone()));
 
-                            let location = read_source_code_info(&descriptor, &[SERVICE_TAG,
-                                service_idx as i32,
-                                SERVICE_METHOD_TAG,
-                                method_idx as i32,]);
+                            let location = read_source_code_info(
+                                &descriptor,
+                                &[
+                                    SERVICE_TAG,
+                                    service_idx as i32,
+                                    SERVICE_METHOD_TAG,
+                                    method_idx as i32,
+                                ],
+                            );
 
                             Method {
                                 name: method_name,
@@ -552,14 +573,17 @@ impl ProtoFileDescriptorTemplate {
                                 deprecated: m.options.clone().map_or(false, |o| o.deprecated()),
                                 backlinks: Default::default(),
                                 comments: Comments::from_location(&location),
-                                source: location.map(|location |Source::from_location(&location, descriptor.name()))
+                                source: location.map(|location| {
+                                    Source::from_location(&location, descriptor.name())
+                                }),
                             }
                         })
                         .collect(),
                     self_link: service_link,
                     backlinks: Default::default(),
                     comments: Comments::from_location(&location),
-                    source: location.map(|location |Source::from_location(&location, descriptor.name()))
+                    source: location
+                        .map(|location| Source::from_location(&location, descriptor.name())),
                 }
             })
             .collect();

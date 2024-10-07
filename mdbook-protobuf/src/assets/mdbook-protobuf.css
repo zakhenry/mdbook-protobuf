@@ -1,0 +1,170 @@
+html:has(.mdbook-proto) {
+    scroll-behavior: smooth;
+}
+
+.mdbook-proto {
+    .deprecated:after {
+        content: "[deprecated]";
+        font-family: monospace;
+    }
+    .deprecated {
+        color: var(--sidebar-non-existant);
+    }
+
+    > label {
+        font-size: .8em;
+        color: var(--sidebar-non-existant);
+    }
+
+    border: none;
+
+    position: relative;
+
+    min-inline-size: auto; /* prevent fieldset styling making container grow with children */
+
+    fieldset {
+        border: none;
+    }
+
+    fieldset:target {
+        border-width: 3px;
+        border-color: var(--sidebar-fg);
+    }
+
+    .source {
+        position: absolute;
+        right: 1rem;
+        visibility: hidden;
+    }
+
+    fieldset:hover>.source {
+        visibility: visible;
+    }
+
+    .comment {
+        color: var(--sidebar-non-existant);
+        p {
+            margin: auto;
+        }
+
+        /* add spacing only between adjacent comments */
+        + .comment {
+            margin-top: 1rem;
+        }
+
+    }
+
+    .message, .enum, .method {
+        border-left: 1px solid var(--searchresults-border-color);
+        margin-bottom: 15px;
+    }
+
+    .service, .enum, .message, .method, .oneof {
+        >label:before {
+            font-family: monospace;
+            color: var(--searchresults-border-color);
+            margin-right: 5px;
+        }
+    }
+
+    .method>label:before {
+        content: "rpc";
+    }
+
+    .service>label:before {
+        content: "service";
+    }
+
+    .oneof>label:before {
+        content: "oneof";
+    }
+
+    .message>label:before {
+        content: "message";
+    }
+
+    .enum>label:before {
+        content: "enum";
+    }
+
+    .method>label:before,
+    .service>label:before,
+    .oneof>label:before,
+    .message>label:before,
+    .enum>label:before,
+    .keyword {
+        font-size: smaller;
+        font-family: monospace;
+    }
+
+    .enum ul {
+        list-style-type: none;
+        padding: 0;
+    }
+
+    .services, .messages, .enums {
+        > label {
+            display: none;
+        }
+    }
+
+    .service {
+        padding-left: 0;
+    }
+
+    .backlinks {
+
+        &[data-usage-count="0"] {
+            display: none;
+        }
+
+        > summary {
+            list-style: none;
+        }
+        > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        summary>span {
+
+            font-size: 0.7em;
+            color: var(--sidebar-active);
+            &:before {
+                content: "[";
+            }
+            &:after {
+                content: "]";
+            }
+        }
+        cursor: pointer;
+    }
+
+    .field {
+        label {
+            &:after {
+                content: ":";
+                color: var(--sidebar-non-existant);
+            }
+            padding-right: 5px;
+        }
+        .type {
+            font-size: 1.3rem;
+            display: inline-flex;
+            border: 1px solid var(--sidebar-non-existant);
+            border-radius: 5px;
+            padding: 5px;
+            font-family: monospace;
+
+            .optional {
+                font-style: italic;
+                padding-right: 5px;
+            }
+
+            .primitive {
+                em {
+                    display: none; /*hide proto info for now*/
+                }
+            }
+        }
+    }
+}

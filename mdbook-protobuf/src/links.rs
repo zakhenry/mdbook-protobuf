@@ -4,7 +4,7 @@ use askama::Template;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use mdbook::book::{Chapter, Link};
-use pulldown_cmark::{CowStr, Event, Parser, Tag, TagEnd, Options};
+use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, TagEnd};
 use pulldown_cmark_to_cmark::{cmark, cmark_with_options};
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -66,9 +66,14 @@ impl SymbolLink {
         let (fqsl_no_prop, property) = Self::split_property(&fqsl);
         let best_match = Self::find_best_match(&fqsl_no_prop, packages);
 
-        let path = best_match.map(|package| package.replace(".", "/")).unwrap_or("".into());
+        let path = best_match
+            .map(|package| package.replace(".", "/"))
+            .unwrap_or("".into());
 
-        let symbol = fqsl_no_prop[1..].strip_prefix(&format!("{}.", best_match.unwrap_or(&"".into()))).unwrap_or(&fqsl_no_prop[1..]).to_string();
+        let symbol = fqsl_no_prop[1..]
+            .strip_prefix(&format!("{}.", best_match.unwrap_or(&"".into())))
+            .unwrap_or(&fqsl_no_prop[1..])
+            .to_string();
 
         Self {
             symbol,
@@ -80,13 +85,18 @@ impl SymbolLink {
     }
 
     fn split_property(fqsl: &str) -> (String, Option<String>) {
-        fqsl.split_once("::").map_or((fqsl.to_string(), None), |(left, right)| (left.to_string(), Some(right.to_string())))
+        fqsl.split_once("::")
+            .map_or((fqsl.to_string(), None), |(left, right)| {
+                (left.to_string(), Some(right.to_string()))
+            })
     }
 
     fn find_best_match<'a>(fqsl: &str, packages: &'a HashSet<String>) -> Option<&'a String> {
-        packages.iter().filter(|pkg| fqsl[1..].starts_with(pkg.as_str())).max_by_key(|pkg| pkg.len())
+        packages
+            .iter()
+            .filter(|pkg| fqsl[1..].starts_with(pkg.as_str()))
+            .max_by_key(|pkg| pkg.len())
     }
-
 
     pub(crate) fn set_property(&mut self, property: String) {
         self.property = Some(property)
@@ -147,9 +157,7 @@ pub fn assign_source_url(
     source_url: String,
 ) {
     for (_, namespace) in document {
-        namespace.mutate_symbols(|symbol| {
-            symbol.set_source_url(source_url.clone())
-        })
+        namespace.mutate_symbols(|symbol| symbol.set_source_url(source_url.clone()))
     }
 }
 
@@ -277,7 +285,9 @@ pub fn link_proto_symbols(
         }
     }).collect();
 
-    chapter.content = cmark(events?.iter(), &mut buf).map(|_| buf).map_err(|err| anyhow::Error::from(err))?;
+    chapter.content = cmark(events?.iter(), &mut buf)
+        .map(|_| buf)
+        .map_err(|err| anyhow::Error::from(err))?;
 
     Ok(())
 }
@@ -293,13 +303,16 @@ mod test {
         let fqsl = ".package.Message";
         let packages = HashSet::from(["package".into()]);
 
-        assert_eq!(SymbolLink::from_fqsl(fqsl.to_string(), &packages), SymbolLink {
-            symbol: "Message".to_string(),
-            path: "package".to_string(),
-            property: None,
-            label_override: None,
-            own_id: None
-        })
+        assert_eq!(
+            SymbolLink::from_fqsl(fqsl.to_string(), &packages),
+            SymbolLink {
+                symbol: "Message".to_string(),
+                path: "package".to_string(),
+                property: None,
+                label_override: None,
+                own_id: None
+            }
+        )
     }
 
     #[test]
@@ -307,28 +320,33 @@ mod test {
         let fqsl = ".package.deeper.Message.Nested";
         let packages = HashSet::from(["package".into(), "package.deeper".into()]);
 
-        assert_eq!(SymbolLink::from_fqsl(fqsl.to_string(), &packages), SymbolLink {
-            symbol: "Message.Nested".to_string(),
-            path: "package/deeper".to_string(),
-            property: None,
-            label_override: None,
-            own_id: None
-        })
+        assert_eq!(
+            SymbolLink::from_fqsl(fqsl.to_string(), &packages),
+            SymbolLink {
+                symbol: "Message.Nested".to_string(),
+                path: "package/deeper".to_string(),
+                property: None,
+                label_override: None,
+                own_id: None
+            }
+        )
     }
-
 
     #[test]
     fn should_parse_properties_of_fqsl() {
         let fqsl = ".package.Service::FooCall";
         let packages = HashSet::from(["package".into()]);
 
-        assert_eq!(SymbolLink::from_fqsl(fqsl.to_string(), &packages), SymbolLink {
-            symbol: "Service".to_string(),
-            path: "package".to_string(),
-            property: Some("FooCall".into()),
-            label_override: None,
-            own_id: None
-        })
+        assert_eq!(
+            SymbolLink::from_fqsl(fqsl.to_string(), &packages),
+            SymbolLink {
+                symbol: "Service".to_string(),
+                path: "package".to_string(),
+                property: Some("FooCall".into()),
+                label_override: None,
+                own_id: None
+            }
+        )
     }
 
     #[test]
@@ -336,15 +354,17 @@ mod test {
         let fqsl = ".Foo";
         let packages = HashSet::from(["package".into()]);
 
-        assert_eq!(SymbolLink::from_fqsl(fqsl.to_string(), &packages), SymbolLink {
-            symbol: "Foo".to_string(),
-            path: "".to_string(),
-            property: None,
-            label_override: None,
-            own_id: None
-        })
+        assert_eq!(
+            SymbolLink::from_fqsl(fqsl.to_string(), &packages),
+            SymbolLink {
+                symbol: "Foo".to_string(),
+                path: "".to_string(),
+                property: None,
+                label_override: None,
+                own_id: None
+            }
+        )
     }
-
 
     #[test]
     fn should_preserve_normal_links() {
@@ -359,7 +379,8 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
 [1]: https://example.com
 
-            "#.to_string(),
+            "#
+            .to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -388,7 +409,8 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
 Lorem ipsum [proto link](proto!(HelloWorld))
 
-"#.to_string(),
+"#
+            .to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -405,7 +427,8 @@ Lorem ipsum [proto link](proto!(HelloWorld))
 
 Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
-"#.trim()
+"#
+            .trim()
         )
     }
 
@@ -435,7 +458,8 @@ Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
 Lorem ipsum [proto link](proto!(HelloWorld))
 
-"#.to_string(),
+"#
+            .to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -478,7 +502,8 @@ proto!(.hello.HelloWorld)"#,
 
 Lorem ipsum [proto link](proto!(HelloWord))
 
-"#.to_string(),
+"#
+            .to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -516,7 +541,8 @@ proto!(.hello.HelloWorld)"#
 
 Lorem ipsum [proto link](proto!(HelloWorld))
 
-"#.to_string(),
+"#
+            .to_string(),
             number: None,
             sub_items: vec![],
             path: None,
@@ -533,7 +559,8 @@ Lorem ipsum [proto link](proto!(HelloWorld))
 
 Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
-"#.trim()
+"#
+            .trim()
         )
     }
 }

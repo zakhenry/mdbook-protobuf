@@ -33,15 +33,27 @@ use links::SymbolLink;
 use view::{ProtoFileDescriptorTemplate, ProtoNamespaceTemplate};
 
 pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
-    let mut file = File::open(path)?;
+    info!("Attempting to read {}", path.display());
 
+    let mut file = File::open(path).map_err(|e| {
+        anyhow!(
+            "Could not read file at path `{}`, does it exist here?",
+            path.display()
+        )
+    })?;
+
+    info!("File descriptor set file found at {}", path.display());
     let mut buffer = Vec::new();
 
     file.read_to_end(&mut buffer)?;
 
     let bytes = Bytes::from(buffer);
 
-    Ok(FileDescriptorSet::decode(bytes)?)
+    let decoded = FileDescriptorSet::decode(bytes)
+        .map_err(|e| anyhow!("failed to parse file descriptor set as protobuf"))?;
+
+    info!("Successfully decoded file descriptor set");
+    Ok(decoded)
 }
 
 const PREPROCESSOR_NAME: &'static str = "protobuf";
@@ -57,7 +69,7 @@ impl ProtobufPreprocessor {
 pub struct ProtobufPreprocessorArgs {
     nest_under: Option<String>,
     file_descriptor_path: PathBuf,
-    proto_url_root: Option<String>
+    proto_url_root: Option<String>,
 }
 
 impl ProtobufPreprocessorArgs {
@@ -78,7 +90,12 @@ impl ProtobufPreprocessorArgs {
                 .ok_or(anyhow!("`proto_descriptor` should be a string"))?,
         );
 
-        let file_descriptor_path = canonicalize(path)?;
+        let file_descriptor_path = canonicalize(path.clone()).map_err(|e| {
+            anyhow!(
+                "Failed to find `proto_descriptor` at path {}",
+                path.display()
+            )
+        })?;
 
         Ok(Self {
             file_descriptor_path,
@@ -98,11 +115,7 @@ impl Preprocessor for ProtobufPreprocessor {
     }
 
     fn run(&self, ctx: &PreprocessorContext, mut book: Book) -> Result<Book, Error> {
-        // info!("book: {:?}", book);
-
         let args = ProtobufPreprocessorArgs::new(ctx)?;
-
-        // info!("fd: {:?}", args.file_descriptor_path);
 
         let file_descriptor_set = read_file_descriptor_set(args.file_descriptor_path.as_path())?;
 
