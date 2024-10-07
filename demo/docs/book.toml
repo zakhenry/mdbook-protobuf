@@ -9,9 +9,9 @@ title = "mdbook-protobuf"
 
 [preprocessor.protobuf]
 command = "mdbook-protobuf"
-proto_descriptor = "./f/proto_file_descriptor_set.pb" # Edit this!
-#nest_under = "protocol" # if you want to have the proto reference placed as a child of a page - set that page name here.
-proto_url_root = "https://example.com/path/to/your/proto/directory" # remove this if you don't have a source to link to
+proto_descriptor = "./build/proto_file_descriptor_set.pb"
+nest_under = "Protocol"
+proto_url_root = "https://github.com/zakhenry/mdbook-protobuf/tree/master/demo/proto/"
 
 [output]
 

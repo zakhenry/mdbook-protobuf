@@ -52,6 +52,10 @@ message RepeatedTypes {
   map<string, fixed32> fixed32_map = 6;
 }
 
+message MessageEmpty {
+
+}
+
 message OtherMessage {
   message NestedType {
     float nested_float = 1;

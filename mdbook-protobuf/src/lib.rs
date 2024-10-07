@@ -260,7 +260,7 @@ mod test {
                         {
                             "Chapter": {
                                 "name": "Chapter 1",
-                                "content": "# Chapter 1\n",
+                                "content": "# Chapter 1\n [Message](proto!(Message)) [](proto!(MessageEmpty))",
                                 "number": [1],
                                 "sub_items": [],
                                 "path": "chapter_1.md",

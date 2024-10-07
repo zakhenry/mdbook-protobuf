@@ -111,7 +111,7 @@ impl SymbolLink {
     }
 
     fn fqsl(&self) -> String {
-        format!(".{}.{}", self.path, self.id())
+        format!(".{}.{}", self.path.replace('/', "."), self.id())
     }
 
     fn label(&self) -> String {
@@ -136,6 +136,15 @@ impl SymbolLink {
 
     pub(crate) fn set_own_id(&mut self, id: String) {
         self.own_id = Some(id)
+    }
+
+    pub(crate) fn matches(&self, query: &str) -> bool {
+        let query_parts: Vec<&str> = query.split('.').collect();
+
+        let fqsl = self.fqsl();
+        let fqsl_parts: Vec<&str> = fqsl.split('.').collect();
+
+        fqsl_parts.ends_with(&*query_parts)
     }
 }
 
@@ -200,7 +209,7 @@ pub fn link_proto_symbols(
                 let link_query = &caps[1];
 
                 let matches: Vec<_> = links.iter().filter(|&s| {
-                    s.fqsl().ends_with(link_query)
+                    s.matches(link_query)
                 }).collect();
 
                 let mut symbol_link = match matches.len() {
@@ -434,7 +443,7 @@ Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
     #[test]
     fn should_error_and_offer_solutions_in_the_result_when_too_many_symbols_match() {
-        let packages = HashSet::from(["hello".into(), "other".into()]);
+        let packages = HashSet::from(["hello".into(), "other.namespace".into()]);
 
         let links = [
             (
@@ -442,11 +451,11 @@ Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
                 Default::default(),
             ),
             (
-                SymbolLink::from_fqsl(".other.HelloWorld".into(), &packages),
+                SymbolLink::from_fqsl(".other.namespace.HelloWorld".into(), &packages),
                 Default::default(),
             ),
             (
-                SymbolLink::from_fqsl(".other.Unrelated".into(), &packages),
+                SymbolLink::from_fqsl(".other.namespace.Unrelated".into(), &packages),
                 Default::default(),
             ),
         ];
@@ -473,9 +482,9 @@ Lorem ipsum [proto link](proto!(HelloWorld))
         assert!(vec![
             r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
 proto!(.hello.HelloWorld)
-proto!(.other.HelloWorld)"#,
+proto!(.other.namespace.HelloWorld)"#,
             r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
-proto!(.other.HelloWorld)
+proto!(.other.namespace.HelloWorld)
 proto!(.hello.HelloWorld)"#,
         ].contains(&&*res.unwrap_err().to_string()));
     }

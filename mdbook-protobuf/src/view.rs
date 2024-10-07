@@ -225,6 +225,7 @@ impl ProtoMessage {
 
         let fqsl = format!(".{}.{}", package, message_path.join("."));
         let self_link = SymbolLink::from_fqsl(fqsl, packages);
+        symbol_usages.entry(self_link.clone()).or_default();
 
         let all_fields: Vec<SimpleField> = message_descriptor
             .field
@@ -325,6 +326,7 @@ impl ProtoMessage {
                         packages,
                         package.clone(),
                         message_path.clone(),
+                        symbol_usages,
                     )
                 })
                 .collect(),
@@ -381,12 +383,15 @@ impl Enum {
         packages: &HashSet<String>,
         package: String,
         namespace: Vec<String>,
+        symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
     ) -> Self {
         let name: String = enum_descriptor.name().into();
 
         let mut fq = namespace.clone();
         fq.push(name.clone());
         let fqsl = format!(".{}.{}", package, fq.join("."));
+        let self_link = SymbolLink::from_fqsl(fqsl, packages);
+        symbol_usages.entry(self_link.clone()).or_default();
 
         let location = read_source_code_info(file_descriptor, path);
 
@@ -410,7 +415,7 @@ impl Enum {
                 .collect(),
             namespace,
             backlinks: Default::default(),
-            self_link: SymbolLink::from_fqsl(fqsl, packages),
+            self_link,
             comments: Comments::from_location(&location),
             source: location
                 .map(|location| Source::from_location(&location, file_descriptor.name())),
@@ -617,6 +622,7 @@ impl ProtoFileDescriptorTemplate {
                     packages,
                     descriptor.package().to_string(),
                     parent_messages.clone(),
+                    symbol_usages
                 )
             })
             .collect();
