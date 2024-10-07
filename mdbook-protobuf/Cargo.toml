@@ -2,6 +2,11 @@
 name = "mdbook-protobuf"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+keywords = ["mdbook", "protobuf"]
+categories = ["development-tools::build-utils"]
+repository = "https://github.com/zakhenry/mdbook-protobuf"
+description = "mdbook-protobuf is for generating reference chapters from protobuf definitions"
 
 [dependencies]
 clap = "4.5.17"
