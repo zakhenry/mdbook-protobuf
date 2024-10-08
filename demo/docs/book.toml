@@ -5,15 +5,11 @@ multilingual = false
 src = "src"
 title = "mdbook-protobuf"
 
-[preprocessor]
-
 [preprocessor.protobuf]
 command = "mdbook-protobuf"
 proto_descriptor = "./build/proto_file_descriptor_set.pb"
 nest_under = "Protocol"
 proto_url_root = "https://github.com/zakhenry/mdbook-protobuf/tree/master/demo/proto/"
-
-[output]
 
 [output.html]
 additional-css = ["mdbook-protobuf.css"]

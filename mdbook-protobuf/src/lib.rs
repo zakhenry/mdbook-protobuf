@@ -24,6 +24,7 @@ use prost_types::{
     DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
     FileDescriptorSet, ServiceDescriptorProto,
 };
+use toml_edit::Value;
 
 mod links;
 mod primitive;
@@ -31,6 +32,7 @@ mod view;
 
 use links::SymbolLink;
 use view::{ProtoFileDescriptorTemplate, ProtoNamespaceTemplate};
+use crate::links::BASE_URL;
 
 pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
     info!("Attempting to read {}", path.display());
@@ -143,6 +145,37 @@ impl Preprocessor for ProtobufPreprocessor {
             ));
         }
 
+        let nest_under_path: Option<PathBuf> = if let Some(nest_under) = args.nest_under {
+            book.sections.iter().find_map(|s| match s {
+                BookItem::Chapter(c) => {
+                    if c.name == nest_under {
+                        c.path.clone()
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+        } else {
+            None
+        };
+
+        let base_url = if let Some(site_url) = ctx.config.get("output.html.site-url").and_then(|u|u.as_str()) {
+            site_url.to_string()
+        } else {
+            "/".to_string()
+        };
+
+        if let Some(ref path) = nest_under_path {
+            let path = path.with_extension("");
+
+            let base_url = format!("{}{}", base_url, path.display());
+            info!("setting base url to {}", base_url);
+            BASE_URL.set(base_url).expect("Base url should not already be set");
+        } else {
+            BASE_URL.set(base_url).expect("Base url should not already be set");
+        }
+
         for book_item in &mut book.sections {
             if let BookItem::Chapter(chapter) = book_item {
                 links::link_proto_symbols(chapter, &mut symbol_usages)?;
@@ -159,10 +192,10 @@ impl Preprocessor for ProtobufPreprocessor {
         }
 
         // @todo support searching sub chapters
-        let target_chapter = if let Some(nest_under) = args.nest_under {
+        let mut target_chapter = if let Some(nest_under) = &nest_under_path {
             let found_section = book.sections.iter_mut().find_map(|s| match s {
                 BookItem::Chapter(c) => {
-                    if c.name == nest_under {
+                    if c.path.as_ref() == Some(nest_under) {
                         Some(c)
                     } else {
                         None
@@ -172,13 +205,14 @@ impl Preprocessor for ProtobufPreprocessor {
             });
 
             if let None = found_section {
-                warn!("`nest_under` config was defined, but no chapter matching name `{}` was found. Note nested chapters are not yet supported.", nest_under);
+                warn!("`nest_under` config was defined, but no chapter matching path `{}` was found. Note nested chapters are not yet supported.", nest_under.display());
             }
 
             found_section
         } else {
             None
         };
+
 
         let chapters: Result<Vec<Chapter>> = namespaces
             .iter()
@@ -248,8 +282,14 @@ mod test {
                         "preprocessor": {
                             "protobuf": {
                                 "proto_descriptor": "../demo/docs/build/proto_file_descriptor_set.pb",
-                                "proto_url_root": "http://example.com/proto/"
+                                "proto_url_root": "http://example.com/proto/",
+                                "nest_under": "Chapter 1"
                             }
+                        },
+                        "output": {
+                           "html": {
+                             "site-url": "/sdk/"
+                           }
                         }
                     },
                     "renderer": "html",
