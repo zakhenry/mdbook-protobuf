@@ -319,4 +319,5 @@ mod test {
         let result = ProtobufPreprocessor::new().run(&ctx, book);
         assert!(result.is_ok());
     }
+
 }

@@ -186,6 +186,7 @@ impl OneOfField {
         path: &[i32],
     ) -> Self {
         let location = read_source_code_info(file_descriptor, path);
+
         Self {
             name: oneof_descriptor.name().into(),
             comments: Comments::from_location(&location),
