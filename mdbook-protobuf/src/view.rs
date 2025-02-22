@@ -175,6 +175,11 @@ struct OneOfField {
 }
 
 impl OneOfField {
+
+    fn is_synthetic(&self) -> bool {
+        self.name.starts_with('_')
+    }
+
     fn from_descriptor(
         file_descriptor: &FileDescriptorProto,
         oneof_descriptor: &OneofDescriptorProto,
@@ -274,19 +279,29 @@ impl ProtoMessage {
             }
 
             if let Some(oneof_index) = field.oneof_index {
-                oneofs
+
+                let oneof = oneofs
                     .get_mut(&oneof_index)
-                    .expect("field should exist")
-                    .fields
-                    .push(field)
+                    .expect("field should exist");
+
+                // don't treat synthetic oneofs caused by proto3 optional field as a oneof
+                if field.optional && oneof.is_synthetic() {
+                    fields.push(Field::Simple(field));
+                } else {
+                    oneof.fields
+                        .push(field)
+                }
+
             } else {
                 fields.push(Field::Simple(field));
             }
         }
 
-        fields.extend(oneofs.into_values().into_iter().map(Field::OneOf));
+        fields.extend(oneofs.into_values().into_iter().filter(|oneof|!oneof.is_synthetic()).map(Field::OneOf));
 
         let location = read_source_code_info(file_descriptor, source_path);
+
+
         Self {
             name,
             self_link,
