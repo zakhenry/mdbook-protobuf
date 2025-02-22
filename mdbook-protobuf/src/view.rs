@@ -300,7 +300,7 @@ impl ProtoMessage {
                 .enumerate()
                 .map(|(idx, m)| {
                     let mut nested_path = source_path.to_vec();
-                    nested_path.extend(&[idx as i32]);
+                    nested_path.extend(&[NESTED_TYPE_TAG, idx as i32]);
                     ProtoMessage::from_descriptor(
                         file_descriptor,
                         m,
@@ -318,7 +318,7 @@ impl ProtoMessage {
                 .enumerate()
                 .map(|(idx, m)| {
                     let mut nested_path = source_path.to_vec();
-                    nested_path.extend(&[idx as i32]);
+                    nested_path.extend(&[NESTED_ENUM_TAG, idx as i32]);
                     Enum::from_descriptor(
                         file_descriptor,
                         m,
@@ -683,11 +683,13 @@ impl ProtoNamespaceTemplate {
 // see https://github.com/tokio-rs/prost/issues/137 const SERVICE_METHOD_TAG: i32 = 2; const DESCRIPTOR_FIELD_TAG: i32 = 2;
 const SERVICE_METHOD_TAG: i32 = 2;
 const MESSAGE_FIELD_TAG: i32 = 2;
+const NESTED_TYPE_TAG: i32 = 3;
 const MESSAGE_ONEOF_TAG: i32 = 8;
 const MESSAGE_TYPE_TAG: i32 = 4;
 const ENUM_TYPE_TAG: i32 = 5;
 const SERVICE_TAG: i32 = 6;
 const ENUM_FIELD_TAG: i32 = 2;
+const NESTED_ENUM_TAG: i32 = 4;
 
 fn read_source_code_info(descriptor: &FileDescriptorProto, path: &[i32]) -> Option<Location> {
     if let Some(info) = &descriptor.source_code_info {
