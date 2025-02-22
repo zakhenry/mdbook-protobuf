@@ -44,6 +44,7 @@ html:has(.mdbook-proto) {
     .comment {
         color: var(--sidebar-non-existant);
         p {
+            white-space: pre-wrap;
             margin: auto;
         }
 
@@ -64,6 +65,10 @@ html:has(.mdbook-proto) {
             font-family: monospace;
             color: var(--searchresults-border-color);
             margin-right: 5px;
+        }
+
+        >label {
+            font-size: 1.2em;
         }
     }
 

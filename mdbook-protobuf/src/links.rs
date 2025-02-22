@@ -3,11 +3,15 @@ use anyhow::{anyhow, Result};
 use askama::Template;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use mdbook::book::{Chapter, Link};
+use mdbook::book::Chapter;
 use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, TagEnd};
-use pulldown_cmark_to_cmark::{cmark, cmark_with_options};
+use pulldown_cmark_to_cmark::cmark;
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::string::ToString;
+use std::sync::OnceLock;
+
+pub(crate) static BASE_URL: OnceLock<String> = OnceLock::new();
 
 pub(crate) trait ProtoSymbol {
     fn symbol_link(&self) -> &SymbolLink;
@@ -131,7 +135,8 @@ impl SymbolLink {
     }
 
     fn href(&self) -> String {
-        format!("/proto/{}.md#{}", self.path, self.id())
+        let base = BASE_URL.get().expect("should be set");
+        format!("{}/{}.md#{}", base, self.path, self.id())
     }
 
     pub(crate) fn set_own_id(&mut self, id: String) {

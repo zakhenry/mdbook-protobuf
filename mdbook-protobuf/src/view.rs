@@ -175,12 +175,18 @@ struct OneOfField {
 }
 
 impl OneOfField {
+
+    fn is_synthetic(&self) -> bool {
+        self.name.starts_with('_')
+    }
+
     fn from_descriptor(
         file_descriptor: &FileDescriptorProto,
         oneof_descriptor: &OneofDescriptorProto,
         path: &[i32],
     ) -> Self {
         let location = read_source_code_info(file_descriptor, path);
+
         Self {
             name: oneof_descriptor.name().into(),
             comments: Comments::from_location(&location),
@@ -274,19 +280,29 @@ impl ProtoMessage {
             }
 
             if let Some(oneof_index) = field.oneof_index {
-                oneofs
+
+                let oneof = oneofs
                     .get_mut(&oneof_index)
-                    .expect("field should exist")
-                    .fields
-                    .push(field)
+                    .expect("field should exist");
+
+                // don't treat synthetic oneofs caused by proto3 optional field as a oneof
+                if field.optional && oneof.is_synthetic() {
+                    fields.push(Field::Simple(field));
+                } else {
+                    oneof.fields
+                        .push(field)
+                }
+
             } else {
                 fields.push(Field::Simple(field));
             }
         }
 
-        fields.extend(oneofs.into_values().into_iter().map(Field::OneOf));
+        fields.extend(oneofs.into_values().into_iter().filter(|oneof|!oneof.is_synthetic()).map(Field::OneOf));
 
         let location = read_source_code_info(file_descriptor, source_path);
+
+
         Self {
             name,
             self_link,
@@ -300,7 +316,7 @@ impl ProtoMessage {
                 .enumerate()
                 .map(|(idx, m)| {
                     let mut nested_path = source_path.to_vec();
-                    nested_path.extend(&[idx as i32]);
+                    nested_path.extend(&[NESTED_TYPE_TAG, idx as i32]);
                     ProtoMessage::from_descriptor(
                         file_descriptor,
                         m,
@@ -318,7 +334,7 @@ impl ProtoMessage {
                 .enumerate()
                 .map(|(idx, m)| {
                     let mut nested_path = source_path.to_vec();
-                    nested_path.extend(&[idx as i32]);
+                    nested_path.extend(&[NESTED_ENUM_TAG, idx as i32]);
                     Enum::from_descriptor(
                         file_descriptor,
                         m,
@@ -683,11 +699,13 @@ impl ProtoNamespaceTemplate {
 // see https://github.com/tokio-rs/prost/issues/137 const SERVICE_METHOD_TAG: i32 = 2; const DESCRIPTOR_FIELD_TAG: i32 = 2;
 const SERVICE_METHOD_TAG: i32 = 2;
 const MESSAGE_FIELD_TAG: i32 = 2;
+const NESTED_TYPE_TAG: i32 = 3;
 const MESSAGE_ONEOF_TAG: i32 = 8;
 const MESSAGE_TYPE_TAG: i32 = 4;
 const ENUM_TYPE_TAG: i32 = 5;
 const SERVICE_TAG: i32 = 6;
 const ENUM_FIELD_TAG: i32 = 2;
+const NESTED_ENUM_TAG: i32 = 4;
 
 fn read_source_code_info(descriptor: &FileDescriptorProto, path: &[i32]) -> Option<Location> {
     if let Some(info) = &descriptor.source_code_info {
