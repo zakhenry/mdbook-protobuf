@@ -132,6 +132,7 @@ impl SimpleField {
         packages: &HashSet<String>,
         parent_symbol: &SymbolLink,
         symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
+        base_url: &str,
     ) -> Self {
         let name: String = field_descriptor.name().into();
         let mut self_link = parent_symbol.clone();
@@ -151,6 +152,7 @@ impl SimpleField {
                     Type::Enum | Type::Message => FieldType::Symbol(SymbolLink::from_fqsl(
                         field_descriptor.type_name().to_string(),
                         packages,
+                        base_url
                     )),
                     t => FieldType::Primitive(t),
                 },
@@ -224,13 +226,14 @@ impl ProtoMessage {
         packages: &HashSet<String>,
         package: String,
         symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
+        base_url: &str,
     ) -> Self {
         let name: String = message_descriptor.name().into();
         let mut message_path = parent_messages.clone();
         message_path.push(message_descriptor.name().into());
 
         let fqsl = format!(".{}.{}", package, message_path.join("."));
-        let self_link = SymbolLink::from_fqsl(fqsl, packages);
+        let self_link = SymbolLink::from_fqsl(fqsl, packages, base_url);
         symbol_usages.entry(self_link.clone()).or_default();
 
         let all_fields: Vec<SimpleField> = message_descriptor
@@ -248,6 +251,7 @@ impl ProtoMessage {
                     packages,
                     &self_link,
                     symbol_usages,
+                    base_url
                 )
             })
             .collect();
@@ -325,6 +329,7 @@ impl ProtoMessage {
                         packages,
                         package.clone(),
                         symbol_usages,
+                        base_url
                     )
                 })
                 .collect(),
@@ -343,6 +348,7 @@ impl ProtoMessage {
                         package.clone(),
                         message_path.clone(),
                         symbol_usages,
+                        base_url
                     )
                 })
                 .collect(),
@@ -400,13 +406,14 @@ impl Enum {
         package: String,
         namespace: Vec<String>,
         symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
+        base_url: &str,
     ) -> Self {
         let name: String = enum_descriptor.name().into();
 
         let mut fq = namespace.clone();
         fq.push(name.clone());
         let fqsl = format!(".{}.{}", package, fq.join("."));
-        let self_link = SymbolLink::from_fqsl(fqsl, packages);
+        let self_link = SymbolLink::from_fqsl(fqsl, packages, base_url);
         symbol_usages.entry(self_link.clone()).or_default();
 
         let location = read_source_code_info(file_descriptor, path);
@@ -527,6 +534,7 @@ impl ProtoFileDescriptorTemplate {
         descriptor: FileDescriptorProto,
         packages: &HashSet<String>,
         symbol_usages: &mut HashMap<SymbolLink, Vec<Backlink>>,
+        base_url: &str,
     ) -> Self {
         let parent_messages = vec![];
 
@@ -540,6 +548,7 @@ impl ProtoFileDescriptorTemplate {
                 let service_link = SymbolLink::from_fqsl(
                     format!(".{}.{}", descriptor.package(), &service_name,),
                     packages,
+                    base_url
                 );
 
                 symbol_usages.entry(service_link.clone()).or_default();
@@ -559,7 +568,7 @@ impl ProtoFileDescriptorTemplate {
                             symbol_usages.entry(method_link.clone()).or_default();
 
                             let request_message =
-                                SymbolLink::from_fqsl(m.input_type.clone().unwrap(), packages);
+                                SymbolLink::from_fqsl(m.input_type.clone().unwrap(), packages, base_url);
 
                             symbol_usages
                                 .entry(request_message.clone())
@@ -567,7 +576,7 @@ impl ProtoFileDescriptorTemplate {
                                 .push(Backlink::Symbol(method_link.clone()));
 
                             let response_message =
-                                SymbolLink::from_fqsl(m.output_type.clone().unwrap(), packages);
+                                SymbolLink::from_fqsl(m.output_type.clone().unwrap(), packages, base_url);
 
                             symbol_usages
                                 .entry(response_message.clone())
@@ -622,6 +631,7 @@ impl ProtoFileDescriptorTemplate {
                     packages,
                     descriptor.package().to_string(),
                     symbol_usages,
+                    base_url
                 )
             })
             .collect();
@@ -638,7 +648,8 @@ impl ProtoFileDescriptorTemplate {
                     packages,
                     descriptor.package().to_string(),
                     parent_messages.clone(),
-                    symbol_usages
+                    symbol_usages,
+                    base_url
                 )
             })
             .collect();

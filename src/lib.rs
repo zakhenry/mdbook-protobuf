@@ -32,7 +32,6 @@ mod view;
 
 use links::SymbolLink;
 use view::{ProtoFileDescriptorTemplate, ProtoNamespaceTemplate};
-use crate::links::BASE_URL;
 
 pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
     info!("Attempting to read {}", path.display());
@@ -133,17 +132,13 @@ impl Preprocessor for ProtobufPreprocessor {
             .map(|f| f.package().to_string())
             .collect();
 
-        for file_descriptor in file_descriptor_set.file {
-            let value = namespaces
-                .entry(file_descriptor.package().to_string())
-                .or_default();
 
-            value.add_file(ProtoFileDescriptorTemplate::from_descriptor(
-                file_descriptor,
-                &packages,
-                &mut symbol_usages,
-            ));
-        }
+        let base_url = if let Some(site_url) = ctx.config.get("output.html.site-url").and_then(|u|u.as_str()) {
+            site_url.to_string()
+        } else {
+            "/".to_string()
+        };
+
 
         let nest_under_path: Option<PathBuf> = if let Some(nest_under) = args.nest_under {
             book.sections.iter().find_map(|s| match s {
@@ -160,21 +155,30 @@ impl Preprocessor for ProtobufPreprocessor {
             None
         };
 
-        let base_url = if let Some(site_url) = ctx.config.get("output.html.site-url").and_then(|u|u.as_str()) {
-            site_url.to_string()
-        } else {
-            "/".to_string()
-        };
 
-        if let Some(ref path) = nest_under_path {
+        info!("setting base url to {}", base_url);
+
+        let base_url = if let Some(ref path) = nest_under_path {
             let path = path.with_extension("");
-
-            let base_url = format!("{}{}", base_url, path.display());
-            info!("setting base url to {}", base_url);
-            BASE_URL.set(base_url).expect("Base url should not already be set");
+            format!("{}{}", base_url, path.display())
         } else {
-            BASE_URL.set(base_url).expect("Base url should not already be set");
+            base_url
+        };
+        let base_url = base_url.as_str();
+
+        for file_descriptor in file_descriptor_set.file {
+            let value = namespaces
+                .entry(file_descriptor.package().to_string())
+                .or_default();
+
+            value.add_file(ProtoFileDescriptorTemplate::from_descriptor(
+                file_descriptor,
+                &packages,
+                &mut symbol_usages,
+                base_url
+            ));
         }
+
 
         for book_item in &mut book.sections {
             if let BookItem::Chapter(chapter) = book_item {
@@ -259,7 +263,7 @@ mod test {
 
     #[test]
     fn it_should_read_proto_descriptor() {
-        let path = Path::new("../demo/docs/build/proto_file_descriptor_set.pb");
+        let path = Path::new("demo/docs/build/proto_file_descriptor_set.pb");
         let descriptor = read_file_descriptor_set(path);
 
         assert!(descriptor.is_ok());
@@ -281,7 +285,7 @@ mod test {
                         },
                         "preprocessor": {
                             "protobuf": {
-                                "proto_descriptor": "../demo/docs/build/proto_file_descriptor_set.pb",
+                                "proto_descriptor": "demo/docs/build/proto_file_descriptor_set.pb",
                                 "proto_url_root": "http://example.com/proto/",
                                 "nest_under": "Chapter 1"
                             }

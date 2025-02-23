@@ -9,9 +9,6 @@ use pulldown_cmark_to_cmark::cmark;
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::string::ToString;
-use std::sync::OnceLock;
-
-pub(crate) static BASE_URL: OnceLock<String> = OnceLock::new();
 
 pub(crate) trait ProtoSymbol {
     fn symbol_link(&self) -> &SymbolLink;
@@ -63,10 +60,11 @@ pub(crate) struct SymbolLink {
     property: Option<String>,
     label_override: Option<String>,
     own_id: Option<String>,
+    base_url: String
 }
 
 impl SymbolLink {
-    pub(crate) fn from_fqsl(fqsl: String, packages: &HashSet<String>) -> Self {
+    pub(crate) fn from_fqsl(fqsl: String, packages: &HashSet<String>, base_url: &str) -> Self {
         let (fqsl_no_prop, property) = Self::split_property(&fqsl);
         let best_match = Self::find_best_match(&fqsl_no_prop, packages);
 
@@ -82,6 +80,7 @@ impl SymbolLink {
         Self {
             symbol,
             path,
+            base_url: base_url.to_string(),
             property,
             label_override: None,
             own_id: None,
@@ -135,8 +134,7 @@ impl SymbolLink {
     }
 
     fn href(&self) -> String {
-        let base = BASE_URL.get().expect("should be set");
-        format!("{}/{}.md#{}", base, self.path, self.id())
+        format!("{}/{}.md#{}", self.base_url, self.path, self.id())
     }
 
     pub(crate) fn set_own_id(&mut self, id: String) {
@@ -318,10 +316,11 @@ mod test {
         let packages = HashSet::from(["package".into()]);
 
         assert_eq!(
-            SymbolLink::from_fqsl(fqsl.to_string(), &packages),
+            SymbolLink::from_fqsl(fqsl.to_string(), &packages, ""),
             SymbolLink {
                 symbol: "Message".to_string(),
                 path: "package".to_string(),
+                base_url: "".to_string(),
                 property: None,
                 label_override: None,
                 own_id: None
@@ -335,10 +334,11 @@ mod test {
         let packages = HashSet::from(["package".into(), "package.deeper".into()]);
 
         assert_eq!(
-            SymbolLink::from_fqsl(fqsl.to_string(), &packages),
+            SymbolLink::from_fqsl(fqsl.to_string(), &packages, ""),
             SymbolLink {
                 symbol: "Message.Nested".to_string(),
                 path: "package/deeper".to_string(),
+                base_url: "".to_string(),
                 property: None,
                 label_override: None,
                 own_id: None
@@ -352,10 +352,11 @@ mod test {
         let packages = HashSet::from(["package".into()]);
 
         assert_eq!(
-            SymbolLink::from_fqsl(fqsl.to_string(), &packages),
+            SymbolLink::from_fqsl(fqsl.to_string(), &packages, ""),
             SymbolLink {
                 symbol: "Service".to_string(),
                 path: "package".to_string(),
+                base_url: "".to_string(),
                 property: Some("FooCall".into()),
                 label_override: None,
                 own_id: None
@@ -369,10 +370,11 @@ mod test {
         let packages = HashSet::from(["package".into()]);
 
         assert_eq!(
-            SymbolLink::from_fqsl(fqsl.to_string(), &packages),
+            SymbolLink::from_fqsl(fqsl.to_string(), &packages, ""),
             SymbolLink {
                 symbol: "Foo".to_string(),
                 path: "".to_string(),
+                base_url: "".to_string(),
                 property: None,
                 label_override: None,
                 own_id: None
@@ -411,8 +413,9 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
     #[test]
     fn should_replace_proto_links_with_symbol_link() {
+
         let links = [(
-            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &HashSet::from(["hello".into()])),
+            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &HashSet::from(["hello".into()]), ""),
             Default::default(),
         )];
 
@@ -439,7 +442,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
             r#"
 # test chapter
 
-Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
+Lorem ipsum <a href="/hello.md#HelloWorld">proto link</a>
 
 "#
             .trim()
@@ -452,15 +455,15 @@ Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
 
         let links = [
             (
-                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages, ""),
                 Default::default(),
             ),
             (
-                SymbolLink::from_fqsl(".other.namespace.HelloWorld".into(), &packages),
+                SymbolLink::from_fqsl(".other.namespace.HelloWorld".into(), &packages, ""),
                 Default::default(),
             ),
             (
-                SymbolLink::from_fqsl(".other.namespace.Unrelated".into(), &packages),
+                SymbolLink::from_fqsl(".other.namespace.Unrelated".into(), &packages, ""),
                 Default::default(),
             ),
         ];
@@ -500,11 +503,11 @@ proto!(.hello.HelloWorld)"#,
 
         let links = [
             (
-                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages, ""),
                 Default::default(),
             ),
             (
-                SymbolLink::from_fqsl(".hello.GoodbyeWorld".into(), &packages),
+                SymbolLink::from_fqsl(".hello.GoodbyeWorld".into(), &packages, ""),
                 Default::default(),
             ),
         ];
@@ -536,14 +539,15 @@ proto!(.hello.HelloWorld)"#
 
     #[test]
     fn should_link_to_parent_of_nested_message() {
+
         let packages = HashSet::from(["hello".into()]);
         let links = [
             (
-                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages),
+                SymbolLink::from_fqsl(".hello.HelloWorld".into(), &packages, ""),
                 Default::default(),
             ),
             (
-                SymbolLink::from_fqsl(".hello.HelloWorld.Nested".into(), &packages),
+                SymbolLink::from_fqsl(".hello.HelloWorld.Nested".into(), &packages, ""),
                 Default::default(),
             ),
         ];
@@ -571,7 +575,7 @@ Lorem ipsum [proto link](proto!(HelloWorld))
             r#"
 # test chapter
 
-Lorem ipsum <a href="/proto/hello.md#HelloWorld">proto link</a>
+Lorem ipsum <a href="/hello.md#HelloWorld">proto link</a>
 
 "#
             .trim()
