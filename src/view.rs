@@ -24,8 +24,8 @@ pub(crate) enum FieldType {
 struct Source {
     start_line: i32,
     end_line: i32,
-    start_column: i32,
-    end_column: i32,
+    _start_column: i32,
+    _end_column: i32,
     file_path: String,
     url: Option<String>,
 }
@@ -39,16 +39,16 @@ impl Source {
         let mut src = match location.span.as_slice().to_owned()[..] {
             [start_line, start_column, end_line, end_column] => Self {
                 start_line,
-                start_column,
-                end_column,
+                _start_column: start_column,
+                _end_column: end_column,
                 end_line,
                 file_path: file_path.to_string(),
                 url: None,
             },
             [start_line, start_column, end_column] => Self {
                 start_line,
-                start_column,
-                end_column,
+                _start_column: start_column,
+                _end_column: end_column,
                 end_line: start_line,
                 file_path: file_path.to_string(),
                 url: None,
@@ -121,7 +121,7 @@ impl Comments {
 struct SimpleField {
     name: String,
     comments: Comments,
-    source: Option<Source>,
+    _source: Option<Source>,
     typ: FieldType,
     optional: bool,
     oneof_index: Option<i32>,
@@ -147,7 +147,7 @@ impl SimpleField {
         Self {
             name,
             comments: Comments::from_location(&location),
-            source: location
+            _source: location
                 .map(|location| Source::from_location(&location, file_descriptor.name())),
             typ: match field_descriptor.r#type {
                 None => {
@@ -202,6 +202,7 @@ impl OneOfField {
     }
 }
 
+#[expect(clippy::large_enum_variant)]
 enum Field {
     Simple(SimpleField),
     OneOf(OneOfField),
@@ -216,13 +217,14 @@ pub(crate) struct ProtoMessage {
     nested_message: Vec<ProtoMessage>,
     nested_enum: Vec<Enum>,
     fields: Vec<Field>,
-    namespace: Vec<String>,
+    _namespace: Vec<String>,
     deprecated: bool,
     self_link: SymbolLink,
     backlinks: Backlinks,
 }
 
 impl ProtoMessage {
+    #[expect(clippy::too_many_arguments)]
     fn from_descriptor(
         file_descriptor: &FileDescriptorProto,
         message_descriptor: &DescriptorProto,
@@ -314,7 +316,7 @@ impl ProtoMessage {
         Self {
             name,
             self_link,
-            namespace: parent_messages,
+            _namespace: parent_messages,
             comments: Comments::from_location(&location),
             source: location
                 .map(|location| Source::from_location(&location, file_descriptor.name())),
@@ -396,12 +398,13 @@ pub(crate) struct Enum {
     comments: Comments,
     source: Option<Source>,
     values: Vec<EnumValue>,
-    namespace: Vec<String>,
+    _namespace: Vec<String>,
     backlinks: Backlinks,
     self_link: SymbolLink,
 }
 
 impl Enum {
+    #[expect(clippy::too_many_arguments)]
     fn from_descriptor(
         file_descriptor: &FileDescriptorProto,
         enum_descriptor: &EnumDescriptorProto,
@@ -440,7 +443,7 @@ impl Enum {
                     }
                 })
                 .collect(),
-            namespace,
+            _namespace: namespace,
             backlinks: Default::default(),
             self_link,
             comments: Comments::from_location(&location),

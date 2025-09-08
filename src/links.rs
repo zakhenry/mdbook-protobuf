@@ -14,10 +14,6 @@ use crate::view::ProtoNamespaceTemplate;
 
 pub(crate) trait ProtoSymbol {
     fn symbol_link(&self) -> &SymbolLink;
-    fn fqsl(&self) -> String {
-        self.symbol_link().fqsl()
-    }
-
     fn set_backlinks(&mut self, backlinks: Backlinks);
     fn set_source_url(&mut self, source_url: String);
 }
@@ -203,10 +199,10 @@ pub fn link_proto_symbols(
     let events: Result<Vec<Event>> = Parser::new_ext(&chapter.content, opts).filter_map(|e| {
         match e {
             Event::Start(Tag::Link {
-                             link_type,
+                             link_type: _,
                              dest_url,
-                             title,
-                             id
+                             title: _,
+                             id: _,
                          }) if re.is_match(&dest_url) => {
                 let Some(caps) = re.captures(&dest_url) else {
                     panic!("match with no capture!");

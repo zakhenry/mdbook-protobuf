@@ -23,7 +23,7 @@ use view::{ProtoFileDescriptorTemplate, ProtoNamespaceTemplate};
 pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
     info!("Attempting to read {}", path.display());
 
-    let mut file = File::open(path).map_err(|e| {
+    let mut file = File::open(path).map_err(|_err| {
         anyhow!(
             "Could not read file at path `{}`, does it exist here?",
             path.display()
@@ -38,7 +38,7 @@ pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
     let bytes = Bytes::from(buffer);
 
     let decoded = FileDescriptorSet::decode(bytes)
-        .map_err(|e| anyhow!("failed to parse file descriptor set as protobuf"))?;
+        .map_err(|err| anyhow!("failed to parse file descriptor set as protobuf: {err}"))?;
 
     info!("Successfully decoded file descriptor set");
     Ok(decoded)
@@ -84,7 +84,7 @@ impl ProtobufPreprocessorArgs {
                 .ok_or(anyhow!("`proto_descriptor` should be a string"))?,
         );
 
-        let file_descriptor_path = canonicalize(path.clone()).map_err(|e| {
+        let file_descriptor_path = canonicalize(path.clone()).map_err(|_err| {
             anyhow!(
                 "Failed to find `proto_descriptor` at path {}",
                 path.display()
@@ -311,7 +311,6 @@ mod test {
         let input_json = input_json.as_bytes();
 
         let (ctx, book) = mdbook::preprocess::CmdPreprocessor::parse_input(input_json).unwrap();
-        let expected_book = book.clone();
         let result = ProtobufPreprocessor::new().run(&ctx, book);
         assert!(result.is_ok());
     }
