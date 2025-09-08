@@ -1,12 +1,17 @@
-use crate::links::{Backlink, Backlinks, ProtoSymbol, SymbolLink};
+use std::collections::{HashMap, HashSet};
+
 use askama::Template;
 use prost_types::field_descriptor_proto::Type;
 use prost_types::source_code_info::Location;
 use prost_types::{
-    DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+    DescriptorProto,
+    EnumDescriptorProto,
+    FieldDescriptorProto,
+    FileDescriptorProto,
     OneofDescriptorProto,
 };
-use std::collections::{HashMap, HashSet};
+
+use crate::links::{Backlink, Backlinks, ProtoSymbol, SymbolLink};
 
 pub(crate) enum FieldType {
     Symbol(SymbolLink),
@@ -146,13 +151,14 @@ impl SimpleField {
                 .map(|location| Source::from_location(&location, file_descriptor.name())),
             typ: match field_descriptor.r#type {
                 None => {
-                    FieldType::Unimplemented // todo look up fully qualified from index.
+                    FieldType::Unimplemented // todo look up fully qualified
+                                             // from index.
                 }
                 Some(label) => match Type::try_from(label).expect("should be of type") {
                     Type::Enum | Type::Message => FieldType::Symbol(SymbolLink::from_fqsl(
                         field_descriptor.type_name().to_string(),
                         packages,
-                        base_url
+                        base_url,
                     )),
                     t => FieldType::Primitive(t),
                 },
@@ -177,7 +183,6 @@ struct OneOfField {
 }
 
 impl OneOfField {
-
     fn is_synthetic(&self) -> bool {
         self.name.starts_with('_')
     }
@@ -251,7 +256,7 @@ impl ProtoMessage {
                     packages,
                     &self_link,
                     symbol_usages,
-                    base_url
+                    base_url,
                 )
             })
             .collect();
@@ -284,28 +289,28 @@ impl ProtoMessage {
             }
 
             if let Some(oneof_index) = field.oneof_index {
-
-                let oneof = oneofs
-                    .get_mut(&oneof_index)
-                    .expect("field should exist");
+                let oneof = oneofs.get_mut(&oneof_index).expect("field should exist");
 
                 // don't treat synthetic oneofs caused by proto3 optional field as a oneof
                 if field.optional && oneof.is_synthetic() {
                     fields.push(Field::Simple(field));
                 } else {
-                    oneof.fields
-                        .push(field)
+                    oneof.fields.push(field)
                 }
-
             } else {
                 fields.push(Field::Simple(field));
             }
         }
 
-        fields.extend(oneofs.into_values().into_iter().filter(|oneof|!oneof.is_synthetic()).map(Field::OneOf));
+        fields.extend(
+            oneofs
+                .into_values()
+                .into_iter()
+                .filter(|oneof| !oneof.is_synthetic())
+                .map(Field::OneOf),
+        );
 
         let location = read_source_code_info(file_descriptor, source_path);
-
 
         Self {
             name,
@@ -329,7 +334,7 @@ impl ProtoMessage {
                         packages,
                         package.clone(),
                         symbol_usages,
-                        base_url
+                        base_url,
                     )
                 })
                 .collect(),
@@ -348,7 +353,7 @@ impl ProtoMessage {
                         package.clone(),
                         message_path.clone(),
                         symbol_usages,
-                        base_url
+                        base_url,
                     )
                 })
                 .collect(),
@@ -548,7 +553,7 @@ impl ProtoFileDescriptorTemplate {
                 let service_link = SymbolLink::from_fqsl(
                     format!(".{}.{}", descriptor.package(), &service_name,),
                     packages,
-                    base_url
+                    base_url,
                 );
 
                 symbol_usages.entry(service_link.clone()).or_default();
@@ -567,31 +572,34 @@ impl ProtoFileDescriptorTemplate {
                             method_link.set_property(method_name.clone());
                             symbol_usages.entry(method_link.clone()).or_default();
 
-                            let request_message =
-                                SymbolLink::from_fqsl(m.input_type.clone().unwrap(), packages, base_url);
+                            let request_message = SymbolLink::from_fqsl(
+                                m.input_type.clone().unwrap(),
+                                packages,
+                                base_url,
+                            );
 
                             symbol_usages
                                 .entry(request_message.clone())
                                 .or_default()
                                 .push(Backlink::Symbol(method_link.clone()));
 
-                            let response_message =
-                                SymbolLink::from_fqsl(m.output_type.clone().unwrap(), packages, base_url);
+                            let response_message = SymbolLink::from_fqsl(
+                                m.output_type.clone().unwrap(),
+                                packages,
+                                base_url,
+                            );
 
                             symbol_usages
                                 .entry(response_message.clone())
                                 .or_default()
                                 .push(Backlink::Symbol(method_link.clone()));
 
-                            let location = read_source_code_info(
-                                &descriptor,
-                                &[
-                                    SERVICE_TAG,
-                                    service_idx as i32,
-                                    SERVICE_METHOD_TAG,
-                                    method_idx as i32,
-                                ],
-                            );
+                            let location = read_source_code_info(&descriptor, &[
+                                SERVICE_TAG,
+                                service_idx as i32,
+                                SERVICE_METHOD_TAG,
+                                method_idx as i32,
+                            ]);
 
                             Method {
                                 name: method_name,
@@ -631,7 +639,7 @@ impl ProtoFileDescriptorTemplate {
                     packages,
                     descriptor.package().to_string(),
                     symbol_usages,
-                    base_url
+                    base_url,
                 )
             })
             .collect();
@@ -649,7 +657,7 @@ impl ProtoFileDescriptorTemplate {
                     descriptor.package().to_string(),
                     parent_messages.clone(),
                     symbol_usages,
-                    base_url
+                    base_url,
                 )
             })
             .collect();
@@ -706,8 +714,8 @@ impl ProtoNamespaceTemplate {
     }
 }
 
-// these tags come from FileDescriptorProto - prost doesn't provide a way to read this as-yet
-// see https://github.com/tokio-rs/prost/issues/137 const SERVICE_METHOD_TAG: i32 = 2; const DESCRIPTOR_FIELD_TAG: i32 = 2;
+// these tags come from FileDescriptorProto - prost doesn't provide a way to
+// read this as-yet see https://github.com/tokio-rs/prost/issues/137 const SERVICE_METHOD_TAG: i32 = 2; const DESCRIPTOR_FIELD_TAG: i32 = 2;
 const SERVICE_METHOD_TAG: i32 = 2;
 const MESSAGE_FIELD_TAG: i32 = 2;
 const NESTED_TYPE_TAG: i32 = 3;

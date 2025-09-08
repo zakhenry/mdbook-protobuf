@@ -1,4 +1,6 @@
-use crate::view::ProtoNamespaceTemplate;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::string::ToString;
+
 use anyhow::{anyhow, Result};
 use askama::Template;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -7,8 +9,8 @@ use mdbook::book::Chapter;
 use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, TagEnd};
 use pulldown_cmark_to_cmark::cmark;
 use regex::Regex;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::string::ToString;
+
+use crate::view::ProtoNamespaceTemplate;
 
 pub(crate) trait ProtoSymbol {
     fn symbol_link(&self) -> &SymbolLink;
@@ -60,7 +62,7 @@ pub(crate) struct SymbolLink {
     property: Option<String>,
     label_override: Option<String>,
     own_id: Option<String>,
-    base_url: String
+    base_url: String,
 }
 
 impl SymbolLink {
@@ -183,7 +185,8 @@ pub fn link_proto_symbols(
 
     let links: Vec<_> = symbol_usages.keys().cloned().collect();
 
-    // @todo assign symbol usages. maybe discriminate type with enum so they can be rendered differently.
+    // @todo assign symbol usages. maybe discriminate type with enum so they can be
+    // rendered differently.
 
     let re = Regex::new(r"proto!\((.*)\)").expect("should be valid regex");
 
@@ -306,9 +309,11 @@ pub fn link_proto_symbols(
 
 #[cfg(test)]
 mod test {
-    use crate::links::{link_proto_symbols, SymbolLink};
-    use mdbook::book::Chapter;
     use std::collections::{HashMap, HashSet};
+
+    use mdbook::book::Chapter;
+
+    use crate::links::{link_proto_symbols, SymbolLink};
 
     #[test]
     fn should_parse_simple_fqsl() {
@@ -413,9 +418,12 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
     #[test]
     fn should_replace_proto_links_with_symbol_link() {
-
         let links = [(
-            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &HashSet::from(["hello".into()]), ""),
+            SymbolLink::from_fqsl(
+                ".hello.HelloWorld".into(),
+                &HashSet::from(["hello".into()]),
+                "",
+            ),
             Default::default(),
         )];
 
@@ -539,7 +547,6 @@ proto!(.hello.HelloWorld)"#
 
     #[test]
     fn should_link_to_parent_of_nested_message() {
-
         let packages = HashSet::from(["hello".into()]);
         let links = [
             (

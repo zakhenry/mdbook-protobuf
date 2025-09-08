@@ -1,8 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process;
-use std::{fs, io};
+use std::{fs, io, process};
 
 use clap::{Arg, ArgMatches, Command};
 use log::{debug, error, info};

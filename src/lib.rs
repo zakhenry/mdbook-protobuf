@@ -1,13 +1,11 @@
 use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::Into;
-use std::fs::canonicalize;
-use std::fs::File;
+use std::fs::{canonicalize, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use anyhow::anyhow;
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Error, Result};
 use askama::filters::format;
 use askama::Template;
 use bytes::Bytes;
@@ -21,8 +19,12 @@ use prost::Message;
 use prost_types::field_descriptor_proto::Type;
 use prost_types::source_code_info::Location;
 use prost_types::{
-    DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
-    FileDescriptorSet, ServiceDescriptorProto,
+    DescriptorProto,
+    EnumDescriptorProto,
+    FieldDescriptorProto,
+    FileDescriptorProto,
+    FileDescriptorSet,
+    ServiceDescriptorProto,
 };
 use toml_edit::Value;
 
@@ -132,13 +134,15 @@ impl Preprocessor for ProtobufPreprocessor {
             .map(|f| f.package().to_string())
             .collect();
 
-
-        let base_url = if let Some(site_url) = ctx.config.get("output.html.site-url").and_then(|u|u.as_str()) {
+        let base_url = if let Some(site_url) = ctx
+            .config
+            .get("output.html.site-url")
+            .and_then(|u| u.as_str())
+        {
             site_url.to_string()
         } else {
             "/".to_string()
         };
-
 
         let nest_under_path: Option<PathBuf> = if let Some(nest_under) = args.nest_under {
             book.sections.iter().find_map(|s| match s {
@@ -154,7 +158,6 @@ impl Preprocessor for ProtobufPreprocessor {
         } else {
             None
         };
-
 
         info!("setting base url to {}", base_url);
 
@@ -175,10 +178,9 @@ impl Preprocessor for ProtobufPreprocessor {
                 file_descriptor,
                 &packages,
                 &mut symbol_usages,
-                base_url
+                base_url,
             ));
         }
-
 
         for book_item in &mut book.sections {
             if let BookItem::Chapter(chapter) = book_item {
@@ -216,7 +218,6 @@ impl Preprocessor for ProtobufPreprocessor {
         } else {
             None
         };
-
 
         let chapters: Result<Vec<Chapter>> = namespaces
             .iter()
@@ -323,5 +324,4 @@ mod test {
         let result = ProtobufPreprocessor::new().run(&ctx, book);
         assert!(result.is_ok());
     }
-
 }
