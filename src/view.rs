@@ -46,7 +46,7 @@ impl Source {
                 url: None,
             },
             [start_line, start_column, end_column] => Self {
-                start_line: start_line.clone(),
+                start_line,
                 start_column,
                 end_column,
                 end_line: start_line,
@@ -168,7 +168,7 @@ impl SimpleField {
             deprecated: field_descriptor
                 .clone()
                 .options
-                .map_or(false, |o| o.deprecated()),
+                .is_some_and(|o| o.deprecated()),
             self_link,
         }
     }
@@ -305,7 +305,6 @@ impl ProtoMessage {
         fields.extend(
             oneofs
                 .into_values()
-                .into_iter()
                 .filter(|oneof| !oneof.is_synthetic())
                 .map(Field::OneOf),
         );
@@ -361,7 +360,7 @@ impl ProtoMessage {
             deprecated: message_descriptor
                 .options
                 .clone()
-                .map_or(false, |o| o.deprecated()),
+                .is_some_and(|o| o.deprecated()),
             backlinks: Default::default(),
         }
     }
@@ -377,9 +376,9 @@ impl ProtoSymbol for ProtoMessage {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source
-            .as_mut()
-            .map(|src| src.set_source_url(source_url));
+        if let Some(src) = self.source.as_mut() {
+            src.set_source_url(source_url)
+        }
     }
 }
 
@@ -436,7 +435,7 @@ impl Enum {
                     EnumValue {
                         name: v.name().to_string(),
                         tag: v.number(),
-                        deprecated: v.clone().options.map_or(false, |o| o.deprecated()),
+                        deprecated: v.clone().options.is_some_and(|o| o.deprecated()),
                         comments: Comments::from_location(&location),
                     }
                 })
@@ -461,9 +460,9 @@ impl ProtoSymbol for Enum {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source
-            .as_mut()
-            .map(|src| src.set_source_url(source_url));
+        if let Some(src) = self.source.as_mut() {
+            src.set_source_url(source_url)
+        }
     }
 }
 
@@ -492,9 +491,9 @@ impl ProtoSymbol for Method {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source
-            .as_mut()
-            .map(|src| src.set_source_url(source_url));
+        if let Some(src) = self.source.as_mut() {
+            src.set_source_url(source_url)
+        }
     }
 }
 
@@ -519,9 +518,9 @@ impl ProtoSymbol for Service {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source
-            .as_mut()
-            .map(|src| src.set_source_url(source_url));
+        if let Some(src) = self.source.as_mut() {
+            src.set_source_url(source_url)
+        }
     }
 }
 
@@ -608,7 +607,7 @@ impl ProtoFileDescriptorTemplate {
                                 request_stream: m.client_streaming(),
                                 response_stream: m.server_streaming(),
                                 self_link: method_link,
-                                deprecated: m.options.clone().map_or(false, |o| o.deprecated()),
+                                deprecated: m.options.clone().is_some_and(|o| o.deprecated()),
                                 backlinks: Default::default(),
                                 comments: Comments::from_location(&location),
                                 source: location.map(|location| {
@@ -682,7 +681,7 @@ impl ProtoNamespaceTemplate {
         self.files.push(file);
     }
 
-    pub(crate) fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mut mutator: F)
+    pub(crate) fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mutator: F)
     where
         F: Fn(&mut dyn ProtoSymbol) + Clone,
     {
@@ -692,11 +691,11 @@ impl ProtoNamespaceTemplate {
         }
     }
 
-    pub(crate) fn mutate_symbols<F>(&mut self, mut mutator: F)
+    pub(crate) fn mutate_symbols<F>(&mut self, mutator: F)
     where
         F: Fn(&mut dyn ProtoSymbol) + Clone,
     {
-        for mut file in &mut self.files {
+        for file in &mut self.files {
             Self::mutate_messages(&mut file.messages, mutator.clone());
 
             for enum_type in &mut file.enums {

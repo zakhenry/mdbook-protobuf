@@ -149,7 +149,7 @@ impl SymbolLink {
         let fqsl = self.fqsl();
         let fqsl_parts: Vec<&str> = fqsl.split('.').collect();
 
-        fqsl_parts.ends_with(&*query_parts)
+        fqsl_parts.ends_with(&query_parts)
     }
 }
 
@@ -157,9 +157,9 @@ pub fn assign_backlinks(
     document: &mut BTreeMap<String, ProtoNamespaceTemplate>,
     symbol_usages: HashMap<SymbolLink, Vec<Backlink>>,
 ) {
-    for (_, namespace) in document {
+    for namespace in document.values_mut() {
         namespace.mutate_symbols(|symbol| {
-            if let Some(usages) = symbol_usages.get(&symbol.symbol_link()) {
+            if let Some(usages) = symbol_usages.get(symbol.symbol_link()) {
                 symbol.set_backlinks(Backlinks::new(usages.clone()))
             }
         })
@@ -170,7 +170,7 @@ pub fn assign_source_url(
     document: &mut BTreeMap<String, ProtoNamespaceTemplate>,
     source_url: String,
 ) {
-    for (_, namespace) in document {
+    for namespace in document.values_mut() {
         namespace.mutate_symbols(|symbol| symbol.set_source_url(source_url.clone()))
     }
 }
@@ -223,7 +223,7 @@ pub fn link_proto_symbols(
                         let mut scored_links: Vec<_> = links.iter().map(|link| {
                             let fqsl = link.fqsl();
 
-                            let distance = matcher.fuzzy_match(&fqsl, &link_query).unwrap_or(0);
+                            let distance = matcher.fuzzy_match(&fqsl, link_query).unwrap_or(0);
 
                             (fqsl, distance)
                         }).collect();
@@ -302,7 +302,7 @@ pub fn link_proto_symbols(
 
     chapter.content = cmark(events?.iter(), &mut buf)
         .map(|_| buf)
-        .map_err(|err| anyhow::Error::from(err))?;
+        .map_err(anyhow::Error::from)?;
 
     Ok(())
 }
@@ -495,14 +495,12 @@ Lorem ipsum [proto link](proto!(HelloWorld))
         let res = link_proto_symbols(&mut chapter, &mut HashMap::from(links));
 
         // contains check used as the order is (intentionally) not stable
-        assert!(vec![
-            r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
+        assert!([r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
 proto!(.hello.HelloWorld)
 proto!(.other.namespace.HelloWorld)"#,
             r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
 proto!(.other.namespace.HelloWorld)
-proto!(.hello.HelloWorld)"#,
-        ].contains(&&*res.unwrap_err().to_string()));
+proto!(.hello.HelloWorld)"#].contains(&&*res.unwrap_err().to_string()));
     }
 
     #[test]

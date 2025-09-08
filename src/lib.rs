@@ -1,32 +1,17 @@
-use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::convert::Into;
 use std::fs::{canonicalize, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Error, Result};
-use askama::filters::format;
 use askama::Template;
 use bytes::Bytes;
-use clap::arg;
-use links::{Backlinks, ProtoSymbol};
-use log::{debug, info, warn};
+use log::{info, warn};
 use mdbook::book::{Book, Chapter, SectionNumber};
 use mdbook::preprocess::{Preprocessor, PreprocessorContext};
 use mdbook::BookItem;
 use prost::Message;
-use prost_types::field_descriptor_proto::Type;
-use prost_types::source_code_info::Location;
-use prost_types::{
-    DescriptorProto,
-    EnumDescriptorProto,
-    FieldDescriptorProto,
-    FileDescriptorProto,
-    FileDescriptorSet,
-    ServiceDescriptorProto,
-};
-use toml_edit::Value;
+use prost_types::FileDescriptorSet;
 
 mod links;
 mod primitive;
@@ -59,9 +44,15 @@ pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
     Ok(decoded)
 }
 
-const PREPROCESSOR_NAME: &'static str = "protobuf";
+const PREPROCESSOR_NAME: &str = "protobuf";
 
 pub struct ProtobufPreprocessor;
+
+impl Default for ProtobufPreprocessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ProtobufPreprocessor {
     pub fn new() -> ProtobufPreprocessor {
@@ -198,7 +189,7 @@ impl Preprocessor for ProtobufPreprocessor {
         }
 
         // @todo support searching sub chapters
-        let mut target_chapter = if let Some(nest_under) = &nest_under_path {
+        let target_chapter = if let Some(nest_under) = &nest_under_path {
             let found_section = book.sections.iter_mut().find_map(|s| match s {
                 BookItem::Chapter(c) => {
                     if c.path.as_ref() == Some(nest_under) {
@@ -210,7 +201,7 @@ impl Preprocessor for ProtobufPreprocessor {
                 _ => None,
             });
 
-            if let None = found_section {
+            if found_section.is_none() {
                 warn!("`nest_under` config was defined, but no chapter matching path `{}` was found. Note nested chapters are not yet supported.", nest_under.display());
             }
 
