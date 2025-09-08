@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{canonicalize, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, Error, Result};
 use askama::Template;
@@ -18,6 +19,7 @@ mod primitive;
 mod view;
 
 use links::SymbolLink;
+use tempfile::NamedTempFile;
 use view::{ProtoFileDescriptorTemplate, ProtoNamespaceTemplate};
 
 pub fn read_file_descriptor_set(path: &Path) -> Result<FileDescriptorSet> {
@@ -60,9 +62,96 @@ impl ProtobufPreprocessor {
     }
 }
 
+enum FileDescriptor {
+    Path(PathBuf),
+    BufBuild {
+        src_dir: PathBuf,
+        extra_args: Vec<String>,
+    },
+}
+
+impl FileDescriptor {
+    fn from_config(ctx: &PreprocessorContext, config: &toml::value::Table) -> Result<Self> {
+        if let Some(value) = config.get("proto_descriptor") {
+            let path = value.as_str().ok_or_else(|| {
+                anyhow!(
+                    "expected `proto_descriptor` to be a string, got {:?}",
+                    value
+                )
+            })?;
+            let path = ctx.root.join(path);
+            let path = canonicalize(&path).map_err(|_err| {
+                anyhow!(
+                    "failed to find `proto_descriptor` at path {}",
+                    path.display()
+                )
+            })?;
+            return Ok(Self::Path(path));
+        }
+
+        if let Some(value) = config.get("buf_src_dir") {
+            let path = value
+                .as_str()
+                .ok_or_else(|| anyhow!("expected `buf_src_dir` to be a string, got {:?}", value))?;
+            let path = ctx.root.join(path);
+            let path = canonicalize(&path).map_err(|_err| {
+                anyhow!("failed to find `buf_src_dir` at path {}", path.display())
+            })?;
+
+            let extra_args = config
+                .get("buf_extra_args")
+                .and_then(|v| {
+                    v.as_array().map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                })
+                .unwrap_or_default();
+
+            return Ok(Self::BufBuild {
+                src_dir: path,
+                extra_args,
+            });
+        }
+
+        Err(anyhow!(
+            "expected `proto_descriptor` or `buf_src_dir` key in config"
+        ))
+    }
+
+    fn read(&self) -> Result<FileDescriptorSet> {
+        match self {
+            Self::Path(p) => read_file_descriptor_set(p),
+            Self::BufBuild {
+                src_dir,
+                extra_args,
+            } => {
+                let temp_file = NamedTempFile::new()?;
+
+                let status = Command::new("buf")
+                    .arg("build")
+                    .args(extra_args)
+                    .arg("--output")
+                    .arg(temp_file.path())
+                    .arg("--")
+                    .arg(src_dir)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()?;
+                if !status.success() {
+                    return Err(anyhow!("`buf build` command failed. Is `buf` installed and is the `buf_src_dir` correct?"));
+                }
+                read_file_descriptor_set(temp_file.path())
+            }
+        }
+    }
+}
+
 pub struct ProtobufPreprocessorArgs {
     nest_under: Option<String>,
-    file_descriptor_path: PathBuf,
+    file_descriptor: FileDescriptor,
     proto_url_root: Option<String>,
 }
 
@@ -73,26 +162,10 @@ impl ProtobufPreprocessorArgs {
             .get_preprocessor(PREPROCESSOR_NAME)
             .ok_or(anyhow!("Expected config"))?;
 
-        let file_descriptor_path = config
-            .get("proto_descriptor")
-            .ok_or(anyhow!("expected `proto_descriptor` key in config"))?;
-
-        let mut path = ctx.root.clone();
-        path.push(
-            file_descriptor_path
-                .as_str()
-                .ok_or(anyhow!("`proto_descriptor` should be a string"))?,
-        );
-
-        let file_descriptor_path = canonicalize(path.clone()).map_err(|_err| {
-            anyhow!(
-                "Failed to find `proto_descriptor` at path {}",
-                path.display()
-            )
-        })?;
+        let file_descriptor = FileDescriptor::from_config(ctx, config)?;
 
         Ok(Self {
-            file_descriptor_path,
+            file_descriptor,
             nest_under: config
                 .get("nest_under")
                 .and_then(|v| v.as_str().map(|s| s.to_string())),
@@ -111,7 +184,7 @@ impl Preprocessor for ProtobufPreprocessor {
     fn run(&self, ctx: &PreprocessorContext, mut book: Book) -> Result<Book, Error> {
         let args = ProtobufPreprocessorArgs::new(ctx)?;
 
-        let file_descriptor_set = read_file_descriptor_set(args.file_descriptor_path.as_path())?;
+        let file_descriptor_set = args.file_descriptor.read()?;
 
         info!("found {} proto files", file_descriptor_set.file.len());
 
@@ -214,6 +287,7 @@ impl Preprocessor for ProtobufPreprocessor {
             .iter()
             .map(|(namespace_key, namespace)| {
                 let content = namespace.render()?;
+                // TODO: hard-coding "proto" here is wrong
                 let path = PathBuf::from(format!("proto/{}", &namespace_key.replace(".", "/")));
                 Ok(Chapter::new(
                     namespace_key.as_ref(),
