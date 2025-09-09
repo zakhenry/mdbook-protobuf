@@ -1,8 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process;
-use std::{fs, io};
+use std::{fs, io, process};
 
 use clap::{Arg, ArgMatches, Command};
 use log::{debug, error, info};
@@ -188,7 +187,6 @@ fn has_file(elem: &Option<&mut Array>, file: &str) -> bool {
 
 fn add_additional_files(doc: &mut DocumentMut) -> bool {
     let mut changed = false;
-    let mut printed = false;
 
     for (file, _) in FILES {
         let ext = Path::new(file)
@@ -200,7 +198,6 @@ fn add_additional_files(doc: &mut DocumentMut) -> bool {
         if has_file(&additional_section, file) {
             debug!("'{}' already in 'additional-{}'. Skipping", file, ext)
         } else {
-            printed = true;
             info!("Adding additional files to configuration");
             debug!("Adding '{}' to 'additional-{}'", file, ext);
             insert_additional(doc, ext, file);
