@@ -81,7 +81,10 @@ impl Source {
 // Any filter defined in the module `filters` is accessible in your template.
 mod filters {
     // This filter does not have extra arguments
-    pub fn md<T: std::fmt::Display>(markdown_input: T) -> ::askama::Result<String> {
+    pub fn md<T: std::fmt::Display>(
+        markdown_input: T,
+        _: &dyn askama::Values,
+    ) -> ::askama::Result<String> {
         let markdown = markdown_input.to_string();
 
         let parser = pulldown_cmark::Parser::new(markdown.as_str());
