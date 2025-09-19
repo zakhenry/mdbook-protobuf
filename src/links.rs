@@ -1,4 +1,6 @@
-use crate::view::ProtoNamespaceTemplate;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::string::ToString;
+
 use anyhow::{anyhow, Result};
 use askama::Template;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -7,15 +9,11 @@ use mdbook::book::Chapter;
 use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, TagEnd};
 use pulldown_cmark_to_cmark::cmark;
 use regex::Regex;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::string::ToString;
+
+use crate::view::ProtoNamespaceTemplate;
 
 pub(crate) trait ProtoSymbol {
     fn symbol_link(&self) -> &SymbolLink;
-    fn fqsl(&self) -> String {
-        self.symbol_link().fqsl()
-    }
-
     fn set_backlinks(&mut self, backlinks: Backlinks);
     fn set_source_url(&mut self, source_url: String);
 }
@@ -60,7 +58,7 @@ pub(crate) struct SymbolLink {
     property: Option<String>,
     label_override: Option<String>,
     own_id: Option<String>,
-    base_url: String
+    base_url: String,
 }
 
 impl SymbolLink {
@@ -147,7 +145,7 @@ impl SymbolLink {
         let fqsl = self.fqsl();
         let fqsl_parts: Vec<&str> = fqsl.split('.').collect();
 
-        fqsl_parts.ends_with(&*query_parts)
+        fqsl_parts.ends_with(&query_parts)
     }
 }
 
@@ -155,9 +153,9 @@ pub fn assign_backlinks(
     document: &mut BTreeMap<String, ProtoNamespaceTemplate>,
     symbol_usages: HashMap<SymbolLink, Vec<Backlink>>,
 ) {
-    for (_, namespace) in document {
+    for namespace in document.values_mut() {
         namespace.mutate_symbols(|symbol| {
-            if let Some(usages) = symbol_usages.get(&symbol.symbol_link()) {
+            if let Some(usages) = symbol_usages.get(symbol.symbol_link()) {
                 symbol.set_backlinks(Backlinks::new(usages.clone()))
             }
         })
@@ -168,7 +166,7 @@ pub fn assign_source_url(
     document: &mut BTreeMap<String, ProtoNamespaceTemplate>,
     source_url: String,
 ) {
-    for (_, namespace) in document {
+    for namespace in document.values_mut() {
         namespace.mutate_symbols(|symbol| symbol.set_source_url(source_url.clone()))
     }
 }
@@ -183,7 +181,8 @@ pub fn link_proto_symbols(
 
     let links: Vec<_> = symbol_usages.keys().cloned().collect();
 
-    // @todo assign symbol usages. maybe discriminate type with enum so they can be rendered differently.
+    // @todo assign symbol usages. maybe discriminate type with enum so they can be
+    // rendered differently.
 
     let re = Regex::new(r"proto!\((.*)\)").expect("should be valid regex");
 
@@ -200,10 +199,10 @@ pub fn link_proto_symbols(
     let events: Result<Vec<Event>> = Parser::new_ext(&chapter.content, opts).filter_map(|e| {
         match e {
             Event::Start(Tag::Link {
-                             link_type,
+                             link_type: _,
                              dest_url,
-                             title,
-                             id
+                             title: _,
+                             id: _,
                          }) if re.is_match(&dest_url) => {
                 let Some(caps) = re.captures(&dest_url) else {
                     panic!("match with no capture!");
@@ -220,7 +219,7 @@ pub fn link_proto_symbols(
                         let mut scored_links: Vec<_> = links.iter().map(|link| {
                             let fqsl = link.fqsl();
 
-                            let distance = matcher.fuzzy_match(&fqsl, &link_query).unwrap_or(0);
+                            let distance = matcher.fuzzy_match(&fqsl, link_query).unwrap_or(0);
 
                             (fqsl, distance)
                         }).collect();
@@ -299,16 +298,18 @@ pub fn link_proto_symbols(
 
     chapter.content = cmark(events?.iter(), &mut buf)
         .map(|_| buf)
-        .map_err(|err| anyhow::Error::from(err))?;
+        .map_err(anyhow::Error::from)?;
 
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
-    use crate::links::{link_proto_symbols, SymbolLink};
-    use mdbook::book::Chapter;
     use std::collections::{HashMap, HashSet};
+
+    use mdbook::book::Chapter;
+
+    use crate::links::{link_proto_symbols, SymbolLink};
 
     #[test]
     fn should_parse_simple_fqsl() {
@@ -413,9 +414,12 @@ Lorem ipsum [footnote link][1] [external link](https://example.com)
 
     #[test]
     fn should_replace_proto_links_with_symbol_link() {
-
         let links = [(
-            SymbolLink::from_fqsl(".hello.HelloWorld".into(), &HashSet::from(["hello".into()]), ""),
+            SymbolLink::from_fqsl(
+                ".hello.HelloWorld".into(),
+                &HashSet::from(["hello".into()]),
+                "",
+            ),
             Default::default(),
         )];
 
@@ -487,14 +491,12 @@ Lorem ipsum [proto link](proto!(HelloWorld))
         let res = link_proto_symbols(&mut chapter, &mut HashMap::from(links));
 
         // contains check used as the order is (intentionally) not stable
-        assert!(vec![
-            r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
+        assert!([r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
 proto!(.hello.HelloWorld)
 proto!(.other.namespace.HelloWorld)"#,
             r#"More than one protobuf symbol matched your query. Replace your link with one of the following:
 proto!(.other.namespace.HelloWorld)
-proto!(.hello.HelloWorld)"#,
-        ].contains(&&*res.unwrap_err().to_string()));
+proto!(.hello.HelloWorld)"#].contains(&&*res.unwrap_err().to_string()));
     }
 
     #[test]
@@ -539,7 +541,6 @@ proto!(.hello.HelloWorld)"#
 
     #[test]
     fn should_link_to_parent_of_nested_message() {
-
         let packages = HashSet::from(["hello".into()]);
         let links = [
             (

@@ -1,12 +1,17 @@
-use crate::links::{Backlink, Backlinks, ProtoSymbol, SymbolLink};
+use std::collections::{HashMap, HashSet};
+
 use askama::Template;
 use prost_types::field_descriptor_proto::Type;
 use prost_types::source_code_info::Location;
 use prost_types::{
-    DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+    DescriptorProto,
+    EnumDescriptorProto,
+    FieldDescriptorProto,
+    FileDescriptorProto,
     OneofDescriptorProto,
 };
-use std::collections::{HashMap, HashSet};
+
+use crate::links::{Backlink, Backlinks, ProtoSymbol, SymbolLink};
 
 pub(crate) enum FieldType {
     Symbol(SymbolLink),
@@ -19,8 +24,8 @@ pub(crate) enum FieldType {
 struct Source {
     start_line: i32,
     end_line: i32,
-    start_column: i32,
-    end_column: i32,
+    _start_column: i32,
+    _end_column: i32,
     file_path: String,
     url: Option<String>,
 }
@@ -34,16 +39,16 @@ impl Source {
         let mut src = match location.span.as_slice().to_owned()[..] {
             [start_line, start_column, end_line, end_column] => Self {
                 start_line,
-                start_column,
-                end_column,
+                _start_column: start_column,
+                _end_column: end_column,
                 end_line,
                 file_path: file_path.to_string(),
                 url: None,
             },
             [start_line, start_column, end_column] => Self {
-                start_line: start_line.clone(),
-                start_column,
-                end_column,
+                start_line,
+                _start_column: start_column,
+                _end_column: end_column,
                 end_line: start_line,
                 file_path: file_path.to_string(),
                 url: None,
@@ -76,7 +81,10 @@ impl Source {
 // Any filter defined in the module `filters` is accessible in your template.
 mod filters {
     // This filter does not have extra arguments
-    pub fn md<T: std::fmt::Display>(markdown_input: T) -> ::askama::Result<String> {
+    pub fn md<T: std::fmt::Display>(
+        markdown_input: T,
+        _: &dyn askama::Values,
+    ) -> ::askama::Result<String> {
         let markdown = markdown_input.to_string();
 
         let parser = pulldown_cmark::Parser::new(markdown.as_str());
@@ -116,7 +124,7 @@ impl Comments {
 struct SimpleField {
     name: String,
     comments: Comments,
-    source: Option<Source>,
+    _source: Option<Source>,
     typ: FieldType,
     optional: bool,
     oneof_index: Option<i32>,
@@ -142,17 +150,18 @@ impl SimpleField {
         Self {
             name,
             comments: Comments::from_location(&location),
-            source: location
+            _source: location
                 .map(|location| Source::from_location(&location, file_descriptor.name())),
             typ: match field_descriptor.r#type {
                 None => {
-                    FieldType::Unimplemented // todo look up fully qualified from index.
+                    FieldType::Unimplemented // todo look up fully qualified
+                                             // from index.
                 }
                 Some(label) => match Type::try_from(label).expect("should be of type") {
                     Type::Enum | Type::Message => FieldType::Symbol(SymbolLink::from_fqsl(
                         field_descriptor.type_name().to_string(),
                         packages,
-                        base_url
+                        base_url,
                     )),
                     t => FieldType::Primitive(t),
                 },
@@ -162,7 +171,7 @@ impl SimpleField {
             deprecated: field_descriptor
                 .clone()
                 .options
-                .map_or(false, |o| o.deprecated()),
+                .is_some_and(|o| o.deprecated()),
             self_link,
         }
     }
@@ -177,7 +186,6 @@ struct OneOfField {
 }
 
 impl OneOfField {
-
     fn is_synthetic(&self) -> bool {
         self.name.starts_with('_')
     }
@@ -197,6 +205,7 @@ impl OneOfField {
     }
 }
 
+#[expect(clippy::large_enum_variant)]
 enum Field {
     Simple(SimpleField),
     OneOf(OneOfField),
@@ -211,13 +220,14 @@ pub(crate) struct ProtoMessage {
     nested_message: Vec<ProtoMessage>,
     nested_enum: Vec<Enum>,
     fields: Vec<Field>,
-    namespace: Vec<String>,
+    _namespace: Vec<String>,
     deprecated: bool,
     self_link: SymbolLink,
     backlinks: Backlinks,
 }
 
 impl ProtoMessage {
+    #[expect(clippy::too_many_arguments)]
     fn from_descriptor(
         file_descriptor: &FileDescriptorProto,
         message_descriptor: &DescriptorProto,
@@ -251,7 +261,7 @@ impl ProtoMessage {
                     packages,
                     &self_link,
                     symbol_usages,
-                    base_url
+                    base_url,
                 )
             })
             .collect();
@@ -284,33 +294,32 @@ impl ProtoMessage {
             }
 
             if let Some(oneof_index) = field.oneof_index {
-
-                let oneof = oneofs
-                    .get_mut(&oneof_index)
-                    .expect("field should exist");
+                let oneof = oneofs.get_mut(&oneof_index).expect("field should exist");
 
                 // don't treat synthetic oneofs caused by proto3 optional field as a oneof
                 if field.optional && oneof.is_synthetic() {
                     fields.push(Field::Simple(field));
                 } else {
-                    oneof.fields
-                        .push(field)
+                    oneof.fields.push(field)
                 }
-
             } else {
                 fields.push(Field::Simple(field));
             }
         }
 
-        fields.extend(oneofs.into_values().into_iter().filter(|oneof|!oneof.is_synthetic()).map(Field::OneOf));
+        fields.extend(
+            oneofs
+                .into_values()
+                .filter(|oneof| !oneof.is_synthetic())
+                .map(Field::OneOf),
+        );
 
         let location = read_source_code_info(file_descriptor, source_path);
-
 
         Self {
             name,
             self_link,
-            namespace: parent_messages,
+            _namespace: parent_messages,
             comments: Comments::from_location(&location),
             source: location
                 .map(|location| Source::from_location(&location, file_descriptor.name())),
@@ -329,7 +338,7 @@ impl ProtoMessage {
                         packages,
                         package.clone(),
                         symbol_usages,
-                        base_url
+                        base_url,
                     )
                 })
                 .collect(),
@@ -348,7 +357,7 @@ impl ProtoMessage {
                         package.clone(),
                         message_path.clone(),
                         symbol_usages,
-                        base_url
+                        base_url,
                     )
                 })
                 .collect(),
@@ -356,7 +365,7 @@ impl ProtoMessage {
             deprecated: message_descriptor
                 .options
                 .clone()
-                .map_or(false, |o| o.deprecated()),
+                .is_some_and(|o| o.deprecated()),
             backlinks: Default::default(),
         }
     }
@@ -372,9 +381,9 @@ impl ProtoSymbol for ProtoMessage {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source
-            .as_mut()
-            .map(|src| src.set_source_url(source_url));
+        if let Some(src) = self.source.as_mut() {
+            src.set_source_url(source_url)
+        }
     }
 }
 
@@ -392,12 +401,13 @@ pub(crate) struct Enum {
     comments: Comments,
     source: Option<Source>,
     values: Vec<EnumValue>,
-    namespace: Vec<String>,
+    _namespace: Vec<String>,
     backlinks: Backlinks,
     self_link: SymbolLink,
 }
 
 impl Enum {
+    #[expect(clippy::too_many_arguments)]
     fn from_descriptor(
         file_descriptor: &FileDescriptorProto,
         enum_descriptor: &EnumDescriptorProto,
@@ -431,12 +441,12 @@ impl Enum {
                     EnumValue {
                         name: v.name().to_string(),
                         tag: v.number(),
-                        deprecated: v.clone().options.map_or(false, |o| o.deprecated()),
+                        deprecated: v.clone().options.is_some_and(|o| o.deprecated()),
                         comments: Comments::from_location(&location),
                     }
                 })
                 .collect(),
-            namespace,
+            _namespace: namespace,
             backlinks: Default::default(),
             self_link,
             comments: Comments::from_location(&location),
@@ -456,9 +466,9 @@ impl ProtoSymbol for Enum {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source
-            .as_mut()
-            .map(|src| src.set_source_url(source_url));
+        if let Some(src) = self.source.as_mut() {
+            src.set_source_url(source_url)
+        }
     }
 }
 
@@ -487,9 +497,9 @@ impl ProtoSymbol for Method {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source
-            .as_mut()
-            .map(|src| src.set_source_url(source_url));
+        if let Some(src) = self.source.as_mut() {
+            src.set_source_url(source_url)
+        }
     }
 }
 
@@ -514,9 +524,9 @@ impl ProtoSymbol for Service {
     }
 
     fn set_source_url(&mut self, source_url: String) {
-        self.source
-            .as_mut()
-            .map(|src| src.set_source_url(source_url));
+        if let Some(src) = self.source.as_mut() {
+            src.set_source_url(source_url)
+        }
     }
 }
 
@@ -548,7 +558,7 @@ impl ProtoFileDescriptorTemplate {
                 let service_link = SymbolLink::from_fqsl(
                     format!(".{}.{}", descriptor.package(), &service_name,),
                     packages,
-                    base_url
+                    base_url,
                 );
 
                 symbol_usages.entry(service_link.clone()).or_default();
@@ -567,31 +577,34 @@ impl ProtoFileDescriptorTemplate {
                             method_link.set_property(method_name.clone());
                             symbol_usages.entry(method_link.clone()).or_default();
 
-                            let request_message =
-                                SymbolLink::from_fqsl(m.input_type.clone().unwrap(), packages, base_url);
+                            let request_message = SymbolLink::from_fqsl(
+                                m.input_type.clone().unwrap(),
+                                packages,
+                                base_url,
+                            );
 
                             symbol_usages
                                 .entry(request_message.clone())
                                 .or_default()
                                 .push(Backlink::Symbol(method_link.clone()));
 
-                            let response_message =
-                                SymbolLink::from_fqsl(m.output_type.clone().unwrap(), packages, base_url);
+                            let response_message = SymbolLink::from_fqsl(
+                                m.output_type.clone().unwrap(),
+                                packages,
+                                base_url,
+                            );
 
                             symbol_usages
                                 .entry(response_message.clone())
                                 .or_default()
                                 .push(Backlink::Symbol(method_link.clone()));
 
-                            let location = read_source_code_info(
-                                &descriptor,
-                                &[
-                                    SERVICE_TAG,
-                                    service_idx as i32,
-                                    SERVICE_METHOD_TAG,
-                                    method_idx as i32,
-                                ],
-                            );
+                            let location = read_source_code_info(&descriptor, &[
+                                SERVICE_TAG,
+                                service_idx as i32,
+                                SERVICE_METHOD_TAG,
+                                method_idx as i32,
+                            ]);
 
                             Method {
                                 name: method_name,
@@ -600,7 +613,7 @@ impl ProtoFileDescriptorTemplate {
                                 request_stream: m.client_streaming(),
                                 response_stream: m.server_streaming(),
                                 self_link: method_link,
-                                deprecated: m.options.clone().map_or(false, |o| o.deprecated()),
+                                deprecated: m.options.clone().is_some_and(|o| o.deprecated()),
                                 backlinks: Default::default(),
                                 comments: Comments::from_location(&location),
                                 source: location.map(|location| {
@@ -631,7 +644,7 @@ impl ProtoFileDescriptorTemplate {
                     packages,
                     descriptor.package().to_string(),
                     symbol_usages,
-                    base_url
+                    base_url,
                 )
             })
             .collect();
@@ -649,7 +662,7 @@ impl ProtoFileDescriptorTemplate {
                     descriptor.package().to_string(),
                     parent_messages.clone(),
                     symbol_usages,
-                    base_url
+                    base_url,
                 )
             })
             .collect();
@@ -674,7 +687,7 @@ impl ProtoNamespaceTemplate {
         self.files.push(file);
     }
 
-    pub(crate) fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mut mutator: F)
+    pub(crate) fn mutate_messages<F>(messages: &mut Vec<ProtoMessage>, mutator: F)
     where
         F: Fn(&mut dyn ProtoSymbol) + Clone,
     {
@@ -684,11 +697,11 @@ impl ProtoNamespaceTemplate {
         }
     }
 
-    pub(crate) fn mutate_symbols<F>(&mut self, mut mutator: F)
+    pub(crate) fn mutate_symbols<F>(&mut self, mutator: F)
     where
         F: Fn(&mut dyn ProtoSymbol) + Clone,
     {
-        for mut file in &mut self.files {
+        for file in &mut self.files {
             Self::mutate_messages(&mut file.messages, mutator.clone());
 
             for enum_type in &mut file.enums {
@@ -706,8 +719,8 @@ impl ProtoNamespaceTemplate {
     }
 }
 
-// these tags come from FileDescriptorProto - prost doesn't provide a way to read this as-yet
-// see https://github.com/tokio-rs/prost/issues/137 const SERVICE_METHOD_TAG: i32 = 2; const DESCRIPTOR_FIELD_TAG: i32 = 2;
+// these tags come from FileDescriptorProto - prost doesn't provide a way to
+// read this as-yet see https://github.com/tokio-rs/prost/issues/137 const SERVICE_METHOD_TAG: i32 = 2; const DESCRIPTOR_FIELD_TAG: i32 = 2;
 const SERVICE_METHOD_TAG: i32 = 2;
 const MESSAGE_FIELD_TAG: i32 = 2;
 const NESTED_TYPE_TAG: i32 = 3;

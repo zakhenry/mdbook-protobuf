@@ -19,8 +19,8 @@
     {% if enums.len() > 0 %}
     <fieldset class="enums">
         <label>Enums</label>
-        {% for enum in enums %}
-            {{ enum|safe }}
+        {% for e in enums %}
+            {{ e|safe }}
         {% endfor %}
     </fieldset>
     {% endif %}
